@@ -1,0 +1,32 @@
+================================================================================
+  🏛️ WESTMINSTER CRM - INTERNETGA ULASHISH VA IP MANZILLAR BO'YICHA QO'LLANMA
+================================================================================
+
+🚀 ENG OSON VA TEZKOR YO'L:
+   Ekrandagi (Desktop/Рабочий стол) "WESTMINSTER CRM" yarlig'ini 2 marta bosing!
+   U ochilganda sizga BARCHA KIRISH LINKLARINI va IP MANZILINI bir joyda ko'rsatadi:
+
+   [1] Ushbu kompyuterning o'zidan kirish:
+       👉 http://localhost:8000
+
+   [2] Bir xil Wi-Fi dagi telefon va noutbuklardan kirish (Lokal IP):
+       👉 http://<JORIY-IP-MANZIL>:8000
+
+   [3] Butun Internet (Mobil 4G/5G, boshqa shaharlar) uchun Online Link:
+       👉 https://westminster-crm.loca.lt
+
+--------------------------------------------------------------------------------
+❓ SAVOL 1: Nega lokal IP linkini (192.168... / 10.201...) boshqaga tashlasam kirolmadi?
+--------------------------------------------------------------------------------
+SABAB: Lokal IP manziliga faqat SIZNING WI-FI TARMOQINGIZGA ulanib turgan telefon
+yoki kompyuterlar kira oladi. Agar u odam o'zining Mobil Internetida (4G/Beeline)
+yoki boshqa joydagi Wi-Fi da bo'lsa, u 3-chi link -> https://westminster-crm.loca.lt
+orqali kirishi kerak!
+
+--------------------------------------------------------------------------------
+❓ SAVOL 2: Boshqa joyga borsam (boshqa Wi-Fi ga ulansam) IP manzil o'zgaradimi?
+--------------------------------------------------------------------------------
+HA, ALBATTA O'ZGARADI!
+Ekrandagi "WESTMINSTER CRM" yarlig'ini har safar bosganingizda, u yangi borgan
+joyingizdagi YANGI IP MANZILINGIZNI avtomatik aniqlab ekranga chiqarib beradi!
+================================================================================

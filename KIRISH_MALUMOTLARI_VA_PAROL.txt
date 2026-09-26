@@ -1,0 +1,29 @@
+================================================================================
+  🏛️ WESTMINSTER CRM - KIRISH MA'LUMOTLARI VA YO'RIQNOMA
+================================================================================
+
+🔐 YAGONA ADMINISTRATOR HISOBI:
+   -----------------------------------------------------------------------------
+   👤 Login / Foydalanuvchi nomi : WESTMINSTER_LC
+   📱 Telefon raqami           : 97 799 97 96  (yoki +998977999796)
+   🔑 Parol                     : 977999796     (yoki 97 799 97 96)
+   🌐 O'quv markazi kodi       : westminster.uz
+   -----------------------------------------------------------------------------
+
+🌐 TIZIMGA KIRISH HAVOLALARI (LINKLAR):
+
+   [1] Ushbu kompyuterning o'zidan kirish:
+       👉 http://localhost:8000
+
+   [2] Bir xil Wi-Fi tarmoqdagilar (Telefon, Noutbuklar) uchun:
+       👉 http://<KOMPYUTER-IP-MANZILI>:8000
+
+   [3] Butun Internetdagilar (Mobil 4G/5G, boshqa shahardagilar) uchun:
+       👉 Papkadagi "INTERNETGA_ULASHISH.bat" faylini bosing!
+
+--------------------------------------------------------------------------------
+🚀 SERVERNI ISHGA TUSHIRISH:
+   1. Papkadagi "ISHGA_TUSHIRISH.bat" faylini 2 marta bosing.
+   2. Qora oyna yopilmay turishi kerak (server shu oynada ishlaydi).
+   3. Brauzerda http://localhost:8000 manzilliga kiring.
+================================================================================
