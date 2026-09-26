@@ -135,9 +135,6 @@ export default function LoginPage({ onLoginSuccess, settings }) {
         <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)', textAlign: 'center' }}>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '10px' }}>Administrator Kirishi:</div>
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-            <button className="btn btn-secondary btn-sm" onClick={fillQuickDemo}>
-              👑 WESTMINSTER_LC Admin
-            </button>
           </div>
         </div>
       </div>
