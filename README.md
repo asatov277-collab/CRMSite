@@ -67,10 +67,7 @@ npm run build
 
 ## 🔑 Standart Kirish Ma'lumotlari
 
-- **Bosh Admin**:
-  - **Login (Telefon)**: `+998977999796` (yoki `admin`)
-  - **Parol**: `977999796` (yoki `admin123`)
-
+-
 ---
 
 ## 📁 Texnologiyalar
