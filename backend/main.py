@@ -1,3 +1,4 @@
+import sys
 import os
 import json
 import uuid
@@ -5,6 +6,11 @@ import shutil
 import re
 from datetime import datetime, timedelta
 from typing import Optional, List
+
+# Add backend directory to sys.path so local imports (database.py) work from anywhere
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
