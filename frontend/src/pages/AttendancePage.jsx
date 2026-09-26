@@ -52,11 +52,19 @@ export default function AttendancePage({ user }) {
         api.getAttendance(selectedGroupId, date)
       ]);
 
-      setStudents(stList);
+      // Only students who were enrolled on or before this date, or already have attendance on this date
+      const validStudents = (stList || []).filter(s => {
+        const hasAtt = (attList || []).some(a => a.student_id === s.id);
+        if (hasAtt) return true;
+        if (!s.created_at || s.created_at <= date) return true;
+        return false;
+      });
+
+      setStudents(validStudents);
 
       const map = {};
       // Preset default kelgan
-      stList.forEach(s => {
+      validStudents.forEach(s => {
         map[s.id] = { status: 'kelgan', reason: '' };
       });
 

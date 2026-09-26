@@ -366,14 +366,64 @@ def get_dashboard_stats(role: str = "admin", teacher_id: Optional[str] = None):
 # --- USERS / TEACHERS ENDPOINTS ---
 
 @app.get("/api/users")
-def get_users(role_filter: Optional[str] = None):
+def get_users(role_filter: Optional[str] = None, branch_id: Optional[str] = None):
     conn = get_db()
     cursor = conn.cursor()
+    conditions = []
+    params = []
+
     if role_filter:
-        cursor.execute("SELECT id, role, name, phone, avatar, bg, bio, subject, certificates, salary, archived FROM users WHERE role = ?", (role_filter,))
-    else:
-        cursor.execute("SELECT id, role, name, phone, avatar, bg, bio, subject, certificates, salary, archived FROM users")
+        conditions.append("role = ?")
+        params.append(role_filter)
+
+    if branch_id:
+        if branch_id == "b_main":
+            conditions.append("(branch_id = 'b_main' OR branch_id IS NULL OR branch_id = '')")
+        else:
+            conditions.append("branch_id = ?")
+            params.append(branch_id)
+
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    cursor.execute(f"SELECT id, role, name, phone, avatar, bg, bio, subject, certificates, salary, salary_percent, archived, branch_id FROM users {where_sql}", tuple(params))
     users = [dict(r) for r in cursor.fetchall()]
+
+    current_month = datetime.now().strftime("%Y-%m")
+    for u in users:
+        uid = u["id"]
+        # Default percent
+        u["salary_percent"] = u.get("salary_percent") if u.get("salary_percent") is not None else 50.0
+
+        # Calculate monthly paid revenue from this teacher's groups
+        cursor.execute("""
+            SELECT COALESCE(SUM(amount), 0)
+            FROM payments
+            WHERE teacher_id = ? AND paid = 1 AND month = ?
+        """, (uid, current_month))
+        collected = cursor.fetchone()[0] or 0.0
+        u["monthly_revenue"] = float(collected)
+
+        # Calculate percentage salary: collected * (percent / 100)
+        u["calculated_salary"] = round(float(collected) * (float(u["salary_percent"]) / 100.0), 2)
+
+        # Count groups
+        cursor.execute("SELECT COUNT(*) FROM groups WHERE teacher_id = ? AND archived = 0", (uid,))
+        u["group_count"] = cursor.fetchone()[0]
+
+        # Count students in these groups
+        cursor.execute("SELECT id FROM groups WHERE teacher_id = ? AND archived = 0", (uid,))
+        t_group_ids = [r[0] for r in cursor.fetchall()]
+        st_count = 0
+        if t_group_ids:
+            cursor.execute("SELECT group_ids FROM students WHERE archived = 0")
+            for st_row in cursor.fetchall():
+                try:
+                    g_ids = json.loads(st_row[0] or "[]")
+                    if any(gid in t_group_ids for gid in g_ids):
+                        st_count += 1
+                except Exception:
+                    pass
+        u["student_count"] = st_count
+
     conn.close()
     return users
 
@@ -386,6 +436,8 @@ class UserCreateRequest(BaseModel):
     subject: Optional[str] = ""
     certificates: Optional[str] = ""
     salary: Optional[float] = 0
+    salary_percent: Optional[float] = 50.0
+    branch_id: Optional[str] = "b_main"
 
 @app.post("/api/users")
 def create_user(req: UserCreateRequest):
@@ -395,9 +447,9 @@ def create_user(req: UserCreateRequest):
     uid = f"user_{uuid.uuid4().hex[:8]}"
     try:
         cursor.execute("""
-            INSERT INTO users (id, role, name, phone, password, bio, subject, certificates, salary, archived)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-        """, (uid, req.role, req.name, req.phone, req.password, req.bio, req.subject, req.certificates, req.salary))
+            INSERT INTO users (id, role, name, phone, password, bio, subject, certificates, salary, salary_percent, archived, branch_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+        """, (uid, req.role, req.name, req.phone, req.password, req.bio, req.subject, req.certificates, req.salary, req.salary_percent or 50.0, req.branch_id or "b_main"))
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
@@ -405,6 +457,131 @@ def create_user(req: UserCreateRequest):
     
     conn.close()
     return {"success": True, "id": uid, "message": "O'qituvchi muvaffaqiyatli qo'shildi!"}
+
+class UserAdminEditRequest(BaseModel):
+    name: str
+    phone: str
+    password: Optional[str] = None
+    subject: Optional[str] = ""
+    salary_percent: Optional[float] = 50.0
+    branch_id: Optional[str] = "b_main"
+    editor_role: Optional[str] = "admin"
+    editor_branch_id: Optional[str] = None
+
+@app.put("/api/users/{user_id}/admin-edit")
+def admin_edit_user(user_id: str, req: UserAdminEditRequest):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    target = cursor.fetchone()
+    if not target:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Foydalanuvchi topilmadi")
+
+    # Permission check for salary_percent:
+    # Admin can edit any teacher in any branch.
+    # Branch manager can only edit teachers in their assigned branch.
+    if req.editor_role != "admin":
+        if target["branch_id"] != req.editor_branch_id:
+            conn.close()
+            raise HTTPException(status_code=403, detail="Siz faqat o'z filialingizdagi o'qituvchini tahrirlay olasiz!")
+
+    # Check phone uniqueness if changed
+    if req.phone != target["phone"]:
+        cursor.execute("SELECT id FROM users WHERE phone = ? AND id != ?", (req.phone, user_id))
+        if cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=400, detail="Ushbu telefon raqamli foydalanuvchi allaqachon mavjud!")
+
+    if req.password and req.password.strip():
+        cursor.execute("""
+            UPDATE users
+            SET name = ?, phone = ?, password = ?, subject = ?, salary_percent = ?, branch_id = ?
+            WHERE id = ?
+        """, (req.name, req.phone, req.password.strip(), req.subject, req.salary_percent or 50.0, req.branch_id or "b_main", user_id))
+    else:
+        cursor.execute("""
+            UPDATE users
+            SET name = ?, phone = ?, subject = ?, salary_percent = ?, branch_id = ?
+            WHERE id = ?
+        """, (req.name, req.phone, req.subject, req.salary_percent or 50.0, req.branch_id or "b_main", user_id))
+
+    conn.commit()
+    cursor.execute("SELECT id, role, name, phone, avatar, bg, bio, subject, certificates, salary, salary_percent, archived, branch_id FROM users WHERE id = ?", (user_id,))
+    updated = dict(cursor.fetchone())
+    conn.close()
+    return updated
+
+# --- MANAGERS (FILIAL MENEJERLARI) ENDPOINTS ---
+
+class ManagerCreateRequest(BaseModel):
+    name: str
+    phone: str
+    password: str
+    branch_id: str
+
+@app.get("/api/managers")
+def get_managers(branch_id: Optional[str] = None):
+    conn = get_db()
+    cursor = conn.cursor()
+    if branch_id:
+        cursor.execute("""
+            SELECT u.id, u.role, u.name, u.phone, u.branch_id, b.name as branch_name
+            FROM users u
+            LEFT JOIN branches b ON u.branch_id = b.id
+            WHERE u.role = 'manager' AND u.archived = 0 AND u.branch_id = ?
+            ORDER BY u.name ASC
+        """, (branch_id,))
+    else:
+        cursor.execute("""
+            SELECT u.id, u.role, u.name, u.phone, u.branch_id, b.name as branch_name
+            FROM users u
+            LEFT JOIN branches b ON u.branch_id = b.id
+            WHERE u.role = 'manager' AND u.archived = 0
+            ORDER BY u.name ASC
+        """)
+    managers = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return managers
+
+@app.post("/api/managers")
+def create_manager(req: ManagerCreateRequest):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    uid = f"mgr_{uuid.uuid4().hex[:8]}"
+    try:
+        cursor.execute("""
+            INSERT INTO users (id, role, name, phone, password, bio, subject, certificates, salary, salary_percent, archived, branch_id)
+            VALUES (?, 'manager', ?, ?, ?, '', 'Filial Menejeri', '', 0, 0, 0, ?)
+        """, (uid, req.name, req.phone, req.password, req.branch_id))
+
+        # Update branch manager_id and manager_name
+        cursor.execute("""
+            UPDATE branches
+            SET manager_id = ?, manager_name = ?
+            WHERE id = ?
+        """, (uid, req.name, req.branch_id))
+
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Ushbu telefon raqamli menejer allaqachon mavjud!")
+
+    cursor.execute("SELECT id, role, name, phone, branch_id FROM users WHERE id = ?", (uid,))
+    new_m = dict(cursor.fetchone())
+    conn.close()
+    return new_m
+
+@app.delete("/api/managers/{manager_id}")
+def delete_manager(manager_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM users WHERE id = ? AND role = 'manager'", (manager_id,))
+    cursor.execute("UPDATE branches SET manager_id = '', manager_name = 'Tayinlanmagan' WHERE manager_id = ?", (manager_id,))
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": "Menejer o'chirildi"}
 
 @app.put("/api/users/{user_id}")
 def update_user_profile(
@@ -511,25 +688,32 @@ def offboard_teacher(teacher_id: str, req: TeacherOffboardRequest):
 # --- GROUPS ENDPOINTS ---
 
 @app.get("/api/groups")
-def get_groups(teacher_id: Optional[str] = None):
+def get_groups(teacher_id: Optional[str] = None, branch_id: Optional[str] = None):
     conn = get_db()
     cursor = conn.cursor()
 
+    params = []
+    where_clauses = ["g.archived = 0"]
+
     if teacher_id:
-        cursor.execute("""
-            SELECT g.*, u.name as teacher_name
-            FROM groups g
-            JOIN users u ON g.teacher_id = u.id
-            WHERE g.teacher_id = ? AND g.archived = 0
-        """, (teacher_id,))
-    else:
-        cursor.execute("""
-            SELECT g.*, u.name as teacher_name
-            FROM groups g
-            JOIN users u ON g.teacher_id = u.id
-            WHERE g.archived = 0
-        """)
-    
+        where_clauses.append("g.teacher_id = ?")
+        params.append(teacher_id)
+
+    if branch_id:
+        if branch_id == "b_main":
+            where_clauses.append("(g.branch_id = 'b_main' OR g.branch_id IS NULL OR g.branch_id = '')")
+        else:
+            where_clauses.append("g.branch_id = ?")
+            params.append(branch_id)
+
+    where_sql = " AND ".join(where_clauses)
+    query = f"""
+        SELECT g.*, u.name as teacher_name
+        FROM groups g
+        JOIN users u ON g.teacher_id = u.id
+        WHERE {where_sql}
+    """
+    cursor.execute(query, tuple(params))
     groups = [dict(r) for r in cursor.fetchall()]
 
     for g in groups:
@@ -547,6 +731,7 @@ class GroupCreateRequest(BaseModel):
     schedule: Optional[str] = ""
     room: Optional[str] = ""
     price: Optional[float] = 0
+    branch_id: Optional[str] = "b_main"
 
 @app.post("/api/groups")
 def create_group(req: GroupCreateRequest):
@@ -555,9 +740,9 @@ def create_group(req: GroupCreateRequest):
 
     gid = f"g_{uuid.uuid4().hex[:8]}"
     cursor.execute("""
-        INSERT INTO groups (id, name, subject, teacher_id, schedule, room, price, archived)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-    """, (gid, req.name, req.subject, req.teacher_id, req.schedule, req.room, req.price))
+        INSERT INTO groups (id, name, subject, teacher_id, schedule, room, price, archived, branch_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+    """, (gid, req.name, req.subject, req.teacher_id, req.schedule, req.room, req.price, req.branch_id or "b_main"))
     conn.commit()
     conn.close()
 
@@ -649,7 +834,7 @@ def delete_group(group_id: str, user_id: Optional[str] = None):
 # --- STUDENTS ENDPOINTS ---
 
 @app.get("/api/students")
-def get_students(group_id: Optional[str] = None, teacher_id: Optional[str] = None, archived: int = 0):
+def get_students(group_id: Optional[str] = None, teacher_id: Optional[str] = None, branch_id: Optional[str] = None, archived: int = 0):
     conn = get_db()
     cursor = conn.cursor()
 
@@ -661,10 +846,22 @@ def get_students(group_id: Optional[str] = None, teacher_id: Optional[str] = Non
             conn.close()
             return []
 
+    conditions = ["archived = ?"]
+    params = [archived]
+
     if group_id:
-        cursor.execute("SELECT * FROM students WHERE group_ids LIKE ? AND archived = ?", (f'%"{group_id}"%', archived))
-    else:
-        cursor.execute("SELECT * FROM students WHERE archived = ?", (archived,))
+        conditions.append("group_ids LIKE ?")
+        params.append(f'%"{group_id}"%')
+
+    if branch_id:
+        if branch_id == "b_main":
+            conditions.append("(branch_id = 'b_main' OR branch_id IS NULL OR branch_id = '')")
+        else:
+            conditions.append("branch_id = ?")
+            params.append(branch_id)
+
+    sql = f"SELECT * FROM students WHERE {' AND '.join(conditions)}"
+    cursor.execute(sql, tuple(params))
     
     rows = cursor.fetchall()
     students = []
@@ -688,6 +885,7 @@ class StudentCreateRequest(BaseModel):
     phone: str
     parent_phone: str
     group_ids: List[str]
+    branch_id: Optional[str] = "b_main"
 
 @app.post("/api/students")
 def create_student(req: StudentCreateRequest):
@@ -699,9 +897,9 @@ def create_student(req: StudentCreateRequest):
     groups_json = json.dumps(req.group_ids)
 
     cursor.execute("""
-        INSERT INTO students (id, name, phone, parent_phone, group_ids, archived, created_at)
-        VALUES (?, ?, ?, ?, ?, 0, ?)
-    """, (sid, req.name, req.phone, req.parent_phone, groups_json, today))
+        INSERT INTO students (id, name, phone, parent_phone, group_ids, archived, created_at, branch_id)
+        VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+    """, (sid, req.name, req.phone, req.parent_phone, groups_json, today, req.branch_id or "b_main"))
     conn.commit()
     conn.close()
 
@@ -938,10 +1136,17 @@ def generate_payment_share_report(month: str, group_id: Optional[str] = None, te
 # --- CHAT ENDPOINTS ---
 
 @app.get("/api/chat")
-def get_chat_messages(limit: int = 50):
+def get_chat_messages(branch_id: Optional[str] = None, limit: int = 100):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM chat_messages ORDER BY timestamp ASC LIMIT ?", (limit,))
+    if branch_id:
+        cursor.execute("""
+            SELECT * FROM chat_messages 
+            WHERE branch_id = ? OR (branch_id IS NULL AND ? = 'b_main')
+            ORDER BY timestamp ASC LIMIT ?
+        """, (branch_id, branch_id, limit))
+    else:
+        cursor.execute("SELECT * FROM chat_messages ORDER BY timestamp ASC LIMIT ?", (limit,))
     msgs = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return msgs
@@ -951,13 +1156,14 @@ def send_chat_message(
     sender_id: str = Form(...),
     sender_name: str = Form(...),
     text: Optional[str] = Form(""),
+    branch_id: Optional[str] = Form("b_main"),
     image_file: Optional[UploadFile] = File(None)
 ):
     conn = get_db()
     cursor = conn.cursor()
 
     img_path = ""
-    if image_file:
+    if image_file and image_file.filename:
         validate_file_size_and_type(image_file)
         ext = os.path.splitext(image_file.filename)[1]
         fn = f"chat_{uuid.uuid4().hex[:8]}{ext}"
@@ -970,15 +1176,36 @@ def send_chat_message(
     ts = datetime.now().isoformat()
 
     cursor.execute("""
-        INSERT INTO chat_messages (id, sender_id, sender_name, text, image_file, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (msg_id, sender_id, sender_name, text or "", img_path, ts))
+        INSERT INTO chat_messages (id, sender_id, sender_name, text, image_file, timestamp, branch_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (msg_id, sender_id, sender_name, text or "", img_path, ts, branch_id or "b_main"))
     conn.commit()
 
     cursor.execute("SELECT * FROM chat_messages WHERE id = ?", (msg_id,))
     msg = dict(cursor.fetchone())
     conn.close()
     return msg
+
+@app.delete("/api/chat/{message_id}")
+def delete_chat_message(message_id: str, user_id: str = Query(...), role: str = Query(...)):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM chat_messages WHERE id = ?", (message_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Xabar topilmadi")
+
+    msg = dict(row)
+    if role != "admin" and msg["sender_id"] != user_id:
+        conn.close()
+        raise HTTPException(status_code=403, detail="Siz faqat o'zingiz yozgan xabarni o'chira olasiz!")
+
+    cursor.execute("DELETE FROM chat_messages WHERE id = ?", (message_id,))
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": "Xabar muvaffaqiyatli o'chirildi"}
+
 
 # --- COURSE MATERIALS ENDPOINTS ---
 
@@ -1053,6 +1280,7 @@ def update_settings(
     currency: Optional[str] = Form(None),
     timezone: Optional[str] = Form(None),
     theme_color: Optional[str] = Form(None),
+    bg_color: Optional[str] = Form(None),
     logo_file: Optional[UploadFile] = File(None)
 ):
     conn = get_db()
@@ -1060,8 +1288,8 @@ def update_settings(
     cursor.execute("SELECT * FROM system_settings WHERE id = 1")
     current = dict(cursor.fetchone())
 
-    logo_url = current["logo_url"]
-    if logo_file:
+    logo_url = current.get("logo_url", "")
+    if logo_file and logo_file.filename:
         validate_file_size_and_type(logo_file)
         ext = os.path.splitext(logo_file.filename)[1]
         fn = f"logo_{uuid.uuid4().hex[:6]}{ext}"
@@ -1072,7 +1300,7 @@ def update_settings(
 
     cursor.execute("""
         UPDATE system_settings
-        SET name = ?, login_code = ?, phone = ?, address = ?, currency = ?, timezone = ?, theme_color = ?, logo_url = ?
+        SET name = ?, login_code = ?, phone = ?, address = ?, currency = ?, timezone = ?, theme_color = ?, bg_color = ?, logo_url = ?
         WHERE id = 1
     """, (
         name if name is not None else current["name"],
@@ -1081,13 +1309,107 @@ def update_settings(
         address if address is not None else current["address"],
         currency if currency is not None else current["currency"],
         timezone if timezone is not None else current["timezone"],
-        theme_color if theme_color is not None else current["theme_color"],
+        theme_color if theme_color is not None else current.get("theme_color", "#4F46E5"),
+        bg_color if bg_color is not None else current.get("bg_color", "#0B0F17"),
         logo_url
     ))
     conn.commit()
+
+    cursor.execute("SELECT * FROM system_settings WHERE id = 1")
+    updated = dict(cursor.fetchone())
     conn.close()
 
-    return {"success": True, "message": "Tizim sozlamalari yangilandi!"}
+    return {"success": True, "message": "Tizim sozlamalari yangilandi!", "settings": updated}
+
+# --- BRANCHES (FILIALLAR) ENDPOINTS ---
+
+class BranchCreateRequest(BaseModel):
+    name: str
+    address: Optional[str] = ""
+    phone: Optional[str] = ""
+    manager_id: Optional[str] = ""
+    manager_name: Optional[str] = ""
+
+@app.get("/api/branches")
+def get_branches():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM branches ORDER BY created_at ASC")
+    branches = [dict(r) for r in cursor.fetchall()]
+
+    enriched = []
+    for b in branches:
+        bid = b["id"]
+        # Count students
+        if bid == "b_main":
+            cursor.execute("SELECT COUNT(*) FROM students WHERE (branch_id = 'b_main' OR branch_id IS NULL OR branch_id = '') AND archived = 0")
+        else:
+            cursor.execute("SELECT COUNT(*) FROM students WHERE branch_id = ? AND archived = 0", (bid,))
+        b["student_count"] = cursor.fetchone()[0]
+
+        # Count groups
+        if bid == "b_main":
+            cursor.execute("SELECT COUNT(*) FROM groups WHERE (branch_id = 'b_main' OR branch_id IS NULL OR branch_id = '') AND archived = 0")
+        else:
+            cursor.execute("SELECT COUNT(*) FROM groups WHERE branch_id = ? AND archived = 0", (bid,))
+        b["group_count"] = cursor.fetchone()[0]
+
+        # Count teachers
+        if bid == "b_main":
+            cursor.execute("SELECT COUNT(*) FROM users WHERE (branch_id = 'b_main' OR branch_id IS NULL OR branch_id = '') AND role = 'teacher' AND archived = 0")
+        else:
+            cursor.execute("SELECT COUNT(*) FROM users WHERE branch_id = ? AND role = 'teacher' AND archived = 0", (bid,))
+        b["teacher_count"] = cursor.fetchone()[0]
+
+        enriched.append(b)
+
+    conn.close()
+    return enriched
+
+@app.post("/api/branches")
+def create_branch(req: BranchCreateRequest):
+    conn = get_db()
+    cursor = conn.cursor()
+    b_id = f"b_{uuid.uuid4().hex[:6]}"
+    ts = datetime.now().isoformat()
+    cursor.execute("""
+        INSERT INTO branches (id, name, address, phone, manager_id, manager_name, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (b_id, req.name, req.address or "", req.phone or "", req.manager_id or "", req.manager_name or "", ts))
+    conn.commit()
+
+    cursor.execute("SELECT * FROM branches WHERE id = ?", (b_id,))
+    new_b = dict(cursor.fetchone())
+    conn.close()
+    return new_b
+
+@app.put("/api/branches/{branch_id}")
+def update_branch(branch_id: str, req: BranchCreateRequest):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE branches
+        SET name = ?, address = ?, phone = ?, manager_id = ?, manager_name = ?
+        WHERE id = ?
+    """, (req.name, req.address or "", req.phone or "", req.manager_id or "", req.manager_name or "", branch_id))
+    conn.commit()
+
+    cursor.execute("SELECT * FROM branches WHERE id = ?", (branch_id,))
+    updated = dict(cursor.fetchone())
+    conn.close()
+    return updated
+
+@app.delete("/api/branches/{branch_id}")
+def delete_branch(branch_id: str):
+    if branch_id == "b_main":
+        raise HTTPException(status_code=400, detail="Bosh filialni o'chirib bo'lmaydi!")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM branches WHERE id = ?", (branch_id,))
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": "Filial o'chirildi"}
+
 
 # --- GLOBAL SEARCH ENDPOINT ---
 

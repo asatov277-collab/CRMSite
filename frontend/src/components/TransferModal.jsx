@@ -2,15 +2,31 @@ import React, { useState, useEffect } from 'react';
 import { X, ArrowRightLeft } from 'lucide-react';
 import { api } from '../services/api';
 
-export default function TransferModal({ isOpen, student, onTransferred, onClose }) {
+export default function TransferModal({ isOpen, student, groups = [], onTransferred, onSuccess, onClose }) {
+  const currentGroupIds = student 
+    ? (Array.isArray(student.group_ids) ? student.group_ids : (Array.isArray(student.groupIds) ? student.groupIds : []))
+    : [];
+
+  const [fromGroupId, setFromGroupId] = useState(currentGroupIds[0] || '');
   const [targetGroupId, setTargetGroupId] = useState('');
-  const [allGroups, setAllGroups] = useState([]);
+  const [allGroups, setAllGroups] = useState(groups.length > 0 ? groups : []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    if (student) {
+      const gids = Array.isArray(student.group_ids) ? student.group_ids : (Array.isArray(student.groupIds) ? student.groupIds : []);
+      setFromGroupId(gids[0] || '');
+      setTargetGroupId('');
+      setError('');
+    }
+  }, [student]);
+
+  useEffect(() => {
     if (isOpen) {
-      api.getGroups().then(setAllGroups).catch(console.error);
+      api.getGroups().then(data => {
+        if (data && Array.isArray(data)) setAllGroups(data);
+      }).catch(console.error);
     }
   }, [isOpen]);
 
@@ -19,7 +35,12 @@ export default function TransferModal({ isOpen, student, onTransferred, onClose 
   const handleTransfer = async (e) => {
     e.preventDefault();
     if (!targetGroupId) {
-      setError('Iltimos, o\'tkaziladigan guruhni tanlang!');
+      setError("Iltimos, yangi o'tkaziladigan guruhni tanlang!");
+      return;
+    }
+
+    if (fromGroupId && targetGroupId === fromGroupId) {
+      setError("Yangi guruh hozirgi guruh bilan bir xil bo'lishi mumkin emas!");
       return;
     }
 
@@ -28,13 +49,15 @@ export default function TransferModal({ isOpen, student, onTransferred, onClose 
 
     try {
       await api.transferStudent(student.id, {
-        from_group_id: student.groupIds?.[0] || '',
+        from_group_id: fromGroupId || currentGroupIds[0] || '',
         to_group_id: targetGroupId
       });
-      onTransferred();
-      onClose();
+
+      if (typeof onTransferred === 'function') onTransferred();
+      if (typeof onSuccess === 'function') onSuccess();
+      if (typeof onClose === 'function') onClose();
     } catch (err) {
-      setError(err.message || 'O\'tkazishda xatolik');
+      setError(err.message || "O'tkazishda xatolik yuz berdi");
     } finally {
       setLoading(false);
     }
@@ -58,6 +81,26 @@ export default function TransferModal({ isOpen, student, onTransferred, onClose 
             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Tel: {student.phone} | Ota-onasi: {student.parent_phone}</div>
           </div>
 
+          {currentGroupIds.length > 1 && (
+            <div className="form-group">
+              <label className="form-label">Qaysi Guruhdan O'tkazilsin:</label>
+              <select
+                className="form-control"
+                value={fromGroupId}
+                onChange={e => setFromGroupId(e.target.value)}
+              >
+                {currentGroupIds.map(gid => {
+                  const gInfo = allGroups.find(g => g.id === gid);
+                  return (
+                    <option key={gid} value={gid}>
+                      {gInfo ? `${gInfo.name} (${gInfo.subject})` : gid}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+
           <div className="form-group">
             <label className="form-label">Yangi Guruhni Tanlang:</label>
             <select
@@ -67,11 +110,13 @@ export default function TransferModal({ isOpen, student, onTransferred, onClose 
               required
             >
               <option value="">-- Guruhni tanlang --</option>
-              {allGroups.map(g => (
-                <option key={g.id} value={g.id}>
-                  {g.name} ({g.subject} - {g.teacher_name})
-                </option>
-              ))}
+              {allGroups
+                .filter(g => g.id !== fromGroupId)
+                .map(g => (
+                  <option key={g.id} value={g.id}>
+                    {g.name} ({g.subject} - {g.teacher_name || 'O\'qituvchi'})
+                  </option>
+                ))}
             </select>
           </div>
 

@@ -131,7 +131,21 @@ def init_db():
         currency TEXT DEFAULT 'so''m',
         timezone TEXT DEFAULT 'Asia/Tashkent',
         theme_color TEXT DEFAULT '#4F46E5',
+        bg_color TEXT DEFAULT '#0B0F17',
         logo_url TEXT DEFAULT ''
+    )
+    """)
+
+    # Branches table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS branches (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        address TEXT DEFAULT '',
+        phone TEXT DEFAULT '',
+        manager_id TEXT DEFAULT '',
+        manager_name TEXT DEFAULT '',
+        created_at TEXT NOT NULL
     )
     """)
 
@@ -144,6 +158,31 @@ def init_db():
         size_bytes INTEGER DEFAULT 0
     )
     """)
+
+    # Safe migrations for existing database
+    def add_col_if_missing(tbl, col, col_def):
+        try:
+            cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_def}")
+        except Exception:
+            pass
+
+    add_col_if_missing("system_settings", "bg_color", "TEXT DEFAULT '#0B0F17'")
+    add_col_if_missing("groups", "branch_id", "TEXT DEFAULT 'b_main'")
+    add_col_if_missing("students", "branch_id", "TEXT DEFAULT 'b_main'")
+    add_col_if_missing("users", "branch_id", "TEXT DEFAULT 'b_main'")
+    add_col_if_missing("users", "salary_percent", "REAL DEFAULT 50")
+    add_col_if_missing("chat_messages", "branch_id", "TEXT DEFAULT 'b_main'")
+    add_col_if_missing("payments", "branch_id", "TEXT DEFAULT 'b_main'")
+    add_col_if_missing("materials", "branch_id", "TEXT DEFAULT 'b_main'")
+
+    # Ensure default main branch exists
+    cursor.execute("SELECT COUNT(*) FROM branches")
+    if cursor.fetchone()[0] == 0:
+        now_ts = datetime.now().isoformat()
+        cursor.execute("""
+        INSERT INTO branches (id, name, address, phone, manager_id, manager_name, created_at)
+        VALUES ('b_main', 'Bosh Bino (Asosiy Filial)', 'Toshkent sh., Yunusobod tumani', '+998 71 200 00 00', 'admin_westminster', 'WESTMINSTER_LC', ?)
+        """, (now_ts,))
 
     conn.commit()
 

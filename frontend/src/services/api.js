@@ -48,22 +48,34 @@ export const api = {
     request(`/dashboard?role=${role}${teacherId ? `&teacher_id=${teacherId}` : ''}`),
 
   // Users & Teachers
-  getUsers: (roleFilter) => request(`/users${roleFilter ? `?role_filter=${roleFilter}` : ''}`),
+  getUsers: (roleFilter, branchId = null) => {
+    let url = `/users?`;
+    if (roleFilter) url += `role_filter=${roleFilter}&`;
+    if (branchId) url += `branch_id=${branchId}&`;
+    return request(url);
+  },
   createUser: (userData) => request('/users', { method: 'POST', body: userData }),
   updateUserProfile: (userId, formData) => request(`/users/${userId}`, { method: 'PUT', body: formData }),
+  adminEditUser: (userId, data) => request(`/users/${userId}/admin-edit`, { method: 'PUT', body: data }),
   offboardTeacher: (teacherId, data) => request(`/teachers/${teacherId}/offboard`, { method: 'POST', body: data }),
 
   // Groups
-  getGroups: (teacherId) => request(`/groups${teacherId ? `?teacher_id=${teacherId}` : ''}`),
+  getGroups: (teacherId = null, branchId = null) => {
+    let url = `/groups?`;
+    if (teacherId) url += `teacher_id=${teacherId}&`;
+    if (branchId) url += `branch_id=${branchId}&`;
+    return request(url);
+  },
   createGroup: (groupData) => request('/groups', { method: 'POST', body: groupData }),
   deleteGroup: (groupId, userId) => request(`/groups/${groupId}${userId ? `?user_id=${userId}` : ''}`, { method: 'DELETE' }),
   deleteUncollectedGroups: (userId) => request(`/groups/cleanup/uncollected?user_id=${userId}`, { method: 'DELETE' }),
 
   // Students
-  getStudents: (groupId, archived = 0, teacherId = null) => {
+  getStudents: (groupId = null, archived = 0, teacherId = null, branchId = null) => {
     let url = `/students?archived=${archived}`;
     if (groupId) url += `&group_id=${groupId}`;
     if (teacherId) url += `&teacher_id=${teacherId}`;
+    if (branchId) url += `&branch_id=${branchId}`;
     return request(url);
   },
   createStudent: (studentData) => request('/students', { method: 'POST', body: studentData }),
@@ -91,8 +103,21 @@ export const api = {
   },
 
   // Chat
-  getChatMessages: () => request('/chat'),
+  getChatMessages: (branchId = null) => request(`/chat${branchId ? `?branch_id=${branchId}` : ''}`),
   sendChatMessage: (formData) => request('/chat', { method: 'POST', body: formData }),
+  deleteChatMessage: (messageId, userId, role) => 
+    request(`/chat/${messageId}?user_id=${encodeURIComponent(userId)}&role=${encodeURIComponent(role)}`, { method: 'DELETE' }),
+
+  // Branches (Filiallar)
+  getBranches: () => request('/branches'),
+  createBranch: (data) => request('/branches', { method: 'POST', body: data }),
+  updateBranch: (branchId, data) => request(`/branches/${branchId}`, { method: 'PUT', body: data }),
+  deleteBranch: (branchId) => request(`/branches/${branchId}`, { method: 'DELETE' }),
+
+  // Managers (Filial Menejerlari)
+  getManagers: (branchId = null) => request(`/managers${branchId ? `?branch_id=${branchId}` : ''}`),
+  createManager: (data) => request('/managers', { method: 'POST', body: data }),
+  deleteManager: (managerId) => request(`/managers/${managerId}`, { method: 'DELETE' }),
 
   // Materials
   getMaterials: (teacherId) => request(`/materials${teacherId ? `?teacher_id=${teacherId}` : ''}`),

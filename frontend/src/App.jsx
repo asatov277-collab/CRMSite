@@ -18,6 +18,7 @@ import MaterialsPage from './pages/MaterialsPage';
 import SettingsPage from './pages/SettingsPage';
 import BackupPage from './pages/BackupPage';
 import ArchivePage from './pages/ArchivePage';
+import BranchesPage from './pages/BranchesPage';
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -28,18 +29,30 @@ export default function App() {
   const [settings, setSettings] = useState(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [activeBranch, setActiveBranch] = useState(null);
 
   useEffect(() => {
     fetchSettings();
+    // Poll settings every 3 seconds for mandatory global real-time theme & background updates across all clients
+    const interval = setInterval(fetchSettings, 3000);
+
     // Initialize offline sync auto listener
     offlineSync.initAutoSync((syncedCount) => {
       alert(`🎉 Internet qaytdi! ${syncedCount} ta offline davomat yozuvi serverga yuborildi.`);
     });
+
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
-    if (settings?.theme_color) {
-      document.documentElement.style.setProperty('--primary-color', settings.theme_color);
+    if (settings) {
+      if (settings.theme_color) {
+        document.documentElement.style.setProperty('--primary-color', settings.theme_color);
+      }
+      if (settings.bg_color) {
+        document.documentElement.style.setProperty('--bg-dark', settings.bg_color);
+        document.body.style.backgroundColor = settings.bg_color;
+      }
     }
   }, [settings]);
 
@@ -48,7 +61,7 @@ export default function App() {
       const data = await api.getSettings();
       setSettings(data);
     } catch (err) {
-      console.error('Failed to fetch settings:', err);
+      // silent catch for background polling
     }
   };
 
@@ -56,6 +69,7 @@ export default function App() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
+    setActiveBranch(null);
   };
 
   const handleSearchResultSelect = (type, item) => {
@@ -76,6 +90,8 @@ export default function App() {
         onNavigate={setCurrentView}
         user={user}
         settings={settings}
+        activeBranch={activeBranch}
+        onClearActiveBranch={() => setActiveBranch(null)}
       />
 
       {/* Main Container */}
@@ -87,20 +103,32 @@ export default function App() {
           onOpenSearch={() => setIsSearchOpen(true)}
           onLogout={handleLogout}
           onNavigate={setCurrentView}
+          activeBranch={activeBranch}
+          onClearActiveBranch={() => setActiveBranch(null)}
         />
 
         {/* Page Content */}
         <main className="page-body">
           {currentView === 'dashboard' && <DashboardPage user={user} onNavigate={setCurrentView} />}
-          {currentView === 'teachers' && <TeachersPage user={user} onUpdateCurrentUser={setUser} />}
-          {currentView === 'students' && <StudentsPage user={user} />}
-          {currentView === 'groups' && <GroupsPage user={user} />}
+          {currentView === 'teachers' && <TeachersPage user={user} onUpdateCurrentUser={setUser} activeBranch={activeBranch} />}
+          {currentView === 'students' && <StudentsPage user={user} activeBranch={activeBranch} />}
+          {currentView === 'groups' && <GroupsPage user={user} activeBranch={activeBranch} />}
           {currentView === 'attendance' && <AttendancePage user={user} />}
           {currentView === 'payments' && <PaymentsPage user={user} />}
-          {currentView === 'chat' && <ChatPage user={user} />}
+          {currentView === 'chat' && <ChatPage user={user} activeBranch={activeBranch} />}
           {currentView === 'materials' && <MaterialsPage user={user} />}
           {currentView === 'archive' && <ArchivePage />}
           {currentView === 'backup' && <BackupPage />}
+          {currentView === 'branches' && (
+            <BranchesPage
+              user={user}
+              activeBranch={activeBranch}
+              onSelectBranch={(b) => {
+                setActiveBranch(b);
+                setCurrentView('dashboard');
+              }}
+            />
+          )}
           {currentView === 'settings' && <SettingsPage settings={settings} onUpdateSettings={setSettings} />}
         </main>
       </div>

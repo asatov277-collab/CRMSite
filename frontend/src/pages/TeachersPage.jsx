@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, Image, Award, BookOpen, Edit, Shield, Lock, UserX, ArrowRightLeft, Archive } from 'lucide-react';
+import { Users, UserPlus, Image, Award, BookOpen, Edit, Shield, Lock, UserX, ArrowRightLeft, Percent, DollarSign, Building2, KeyRound } from 'lucide-react';
 import { api } from '../services/api';
 
-export default function TeachersPage({ user, onUpdateCurrentUser }) {
+export default function TeachersPage({ user, onUpdateCurrentUser, activeBranch }) {
   const [teachers, setTeachers] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [showSelfEditModal, setShowSelfEditModal] = useState(false);
+  const [editingTeacher, setEditingTeacher] = useState(null); // Admin edit teacher
 
   // Offboard teacher state
   const [selectedTeacherForOffboard, setSelectedTeacherForOffboard] = useState(null);
@@ -16,38 +18,60 @@ export default function TeachersPage({ user, onUpdateCurrentUser }) {
 
   // New Teacher form
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState('+998 90 ');
   const [password, setPassword] = useState('teacher123');
   const [subject, setSubject] = useState('');
   const [bio, setBio] = useState('');
   const [certificates, setCertificates] = useState('');
-  const [salary, setSalary] = useState('');
+  const [salaryPercent, setSalaryPercent] = useState('50');
+  const [teacherBranchId, setTeacherBranchId] = useState(activeBranch?.id || 'b_main');
   const [error, setError] = useState('');
 
+  // Admin Edit Teacher Modal Form state
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [editSubject, setEditSubject] = useState('');
+  const [editSalaryPercent, setEditSalaryPercent] = useState('50');
+  const [editBranchId, setEditBranchId] = useState('b_main');
+  const [editError, setEditError] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+
   // Self Edit profile state
-  const [editName, setEditName] = useState(user?.name || '');
-  const [editBio, setEditBio] = useState(user?.bio || '');
-  const [editSubject, setEditSubject] = useState(user?.subject || '');
-  const [editCerts, setEditCerts] = useState(user?.certificates || '');
+  const [selfName, setSelfName] = useState(user?.name || '');
+  const [selfBio, setSelfBio] = useState(user?.bio || '');
+  const [selfSubject, setSelfSubject] = useState(user?.subject || '');
+  const [selfCerts, setSelfCerts] = useState(user?.certificates || '');
   const [avatarFile, setAvatarFile] = useState(null);
   const [bgFile, setBgFile] = useState(null);
+  const [selfError, setSelfError] = useState('');
 
   const isAdmin = user?.role === 'admin';
+  const isManager = user?.role === 'manager';
+  const currentBranchId = isManager ? (user?.branch_id || null) : (activeBranch ? activeBranch.id : null);
 
   useEffect(() => {
     fetchTeachers();
-  }, []);
+    fetchBranches();
+  }, [currentBranchId]);
 
   const fetchTeachers = async () => {
     setLoading(true);
     try {
-      const data = await api.getUsers('teacher');
+      const data = await api.getUsers('teacher', currentBranchId);
       setTeachers(data.filter(t => !t.archived));
     } catch (err) {
       console.error('Failed to fetch teachers:', err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchBranches = async () => {
+    try {
+      const bList = await api.getBranches();
+      setBranches(bList);
+    } catch (err) {}
   };
 
   const handleCreateTeacher = async (e) => {
@@ -63,41 +87,82 @@ export default function TeachersPage({ user, onUpdateCurrentUser }) {
         subject,
         bio,
         certificates,
-        salary: Number(salary) || 0
+        salary_percent: Number(salaryPercent) || 50,
+        branch_id: teacherBranchId || 'b_main'
       });
       setShowAddModal(false);
       setName('');
-      setPhone('');
+      setPhone('+998 90 ');
+      setPassword('teacher123');
       setSubject('');
       setBio('');
       setCertificates('');
-      setSalary('');
+      setSalaryPercent('50');
       fetchTeachers();
     } catch (err) {
-      setError(err.message || 'O\'qituvchi qo\'shishda xatolik');
+      setError(err.message || 'Xatolik yuz berdi');
     }
   };
 
-  const handleUpdateProfile = async (e) => {
+  // Open Admin Edit Teacher Modal
+  const handleOpenAdminEdit = (teacher) => {
+    setEditingTeacher(teacher);
+    setEditName(teacher.name);
+    setEditPhone(teacher.phone);
+    setEditPassword('');
+    setEditSubject(teacher.subject || '');
+    setEditSalaryPercent(String(teacher.salary_percent || 50));
+    setEditBranchId(teacher.branch_id || 'b_main');
+    setEditError('');
+  };
+
+  const handleAdminEditSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setEditSaving(true);
+    setEditError('');
+
+    try {
+      await api.adminEditUser(editingTeacher.id, {
+        name: editName,
+        phone: editPhone,
+        password: editPassword.trim() ? editPassword.trim() : null,
+        subject: editSubject,
+        salary_percent: Number(editSalaryPercent) || 50,
+        branch_id: editBranchId,
+        editor_role: user.role,
+        editor_branch_id: user.branch_id || null
+      });
+
+      setEditingTeacher(null);
+      fetchTeachers();
+    } catch (err) {
+      setEditError(err.message || 'Tahrirlashda xatolik yuz berdi');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // Self Profile Update
+  const handleSelfEditSubmit = async (e) => {
+    e.preventDefault();
+    setSelfError('');
 
     try {
       const formData = new FormData();
-      formData.append('name', editName);
-      formData.append('bio', editBio);
-      formData.append('subject', editSubject);
-      formData.append('certificates', editCerts);
+      formData.append('name', selfName);
+      formData.append('bio', selfBio);
+      formData.append('subject', selfSubject);
+      formData.append('certificates', selfCerts);
       if (avatarFile) formData.append('avatar_file', avatarFile);
       if (bgFile) formData.append('bg_file', bgFile);
 
-      const res = await api.updateUserProfile(user.id, formData);
-      localStorage.setItem('user', JSON.stringify(res.user));
-      if (onUpdateCurrentUser) onUpdateCurrentUser(res.user);
-      setShowEditProfileModal(false);
+      const updated = await api.updateUserProfile(user.id, formData);
+      localStorage.setItem('user', JSON.stringify(updated));
+      onUpdateCurrentUser(updated);
+      setShowSelfEditModal(false);
       fetchTeachers();
     } catch (err) {
-      setError(err.message || 'Profilni yangilashda xatolik');
+      setSelfError(err.message || 'Profilni yangilashda xatolik');
     }
   };
 
@@ -129,22 +194,31 @@ export default function TeachersPage({ user, onUpdateCurrentUser }) {
 
   const otherTeachers = teachers.filter(t => selectedTeacherForOffboard && t.id !== selectedTeacherForOffboard.id);
 
+  // Check if current user can edit this teacher's salary percent
+  const canEditTeacher = (t) => {
+    if (isAdmin) return true;
+    if (isManager && user.branch_id === t.branch_id) return true;
+    return false;
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
         <div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800 }}>👨‍🏫 O'qituvchilar Bo'limi</h1>
+          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            👨‍🏫 O'qituvchilar Bo'limi {activeBranch && <span style={{ fontSize: '1rem', color: 'var(--primary-color)' }}>({activeBranch.name})</span>}
+          </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Markaz o'qituvchilari katalogi, profillari va bio ma'lumotlari
+            O'qituvchilar profillari, tahrirlash va to'lov tushumidan foizli oylik maosh hisobi
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="btn btn-secondary" onClick={() => setShowEditProfileModal(true)}>
-            <Edit size={16} /> Profilimni Tahrirlash
+          <button className="btn btn-secondary" onClick={() => setShowSelfEditModal(true)}>
+            <Edit size={16} /> Mening Profilim
           </button>
-          {isAdmin && (
+          {(isAdmin || isManager) && (
             <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
               <UserPlus size={16} /> Yangi O'qituvchi Qo'shish
             </button>
@@ -153,96 +227,480 @@ export default function TeachersPage({ user, onUpdateCurrentUser }) {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>Yuklanmoqda...</div>
+        <div style={{ textAlign: 'center', padding: '50px', color: 'var(--text-muted)' }}>O'qituvchilar yuklanmoqda...</div>
       ) : (
         <div className="grid-3">
-          {teachers.map((t) => (
-            <div key={t.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              {/* Background Header Wallpaper */}
-              <div style={{
-                height: '100px',
-                background: t.bg ? `url(${t.bg}) center/cover` : 'linear-gradient(135deg, var(--primary-color), #3B82F6)',
-                position: 'relative'
-              }} />
+          {teachers.map((t) => {
+            const hasEditPermission = canEditTeacher(t);
+            const branchObj = branches.find(b => b.id === t.branch_id);
 
-              {/* Avatar Capsule */}
-              <div style={{ padding: '0 20px 20px 20px', marginTop: '-40px' }}>
+            return (
+              <div key={t.id} className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                {/* Background Wallpaper */}
                 <div style={{
-                  width: '74px',
-                  height: '74px',
-                  borderRadius: '50%',
-                  border: '4px solid var(--bg-card)',
-                  background: 'var(--primary-color)',
-                  overflow: 'hidden',
-                  marginBottom: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justify: 'center',
-                  fontWeight: 800,
-                  fontSize: '1.4rem',
-                  color: '#FFF'
+                  height: '90px',
+                  background: t.bg ? `url(${t.bg}) center/cover` : 'linear-gradient(135deg, var(--primary-color), #3B82F6)',
+                  position: 'relative'
                 }}>
-                  {t.avatar ? (
-                    <img src={t.avatar} alt={t.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    t.name.charAt(0)
+                  {branchObj && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '10px',
+                      right: '12px',
+                      background: 'rgba(0, 0, 0, 0.65)',
+                      backdropFilter: 'blur(4px)',
+                      color: '#FFF',
+                      padding: '3px 10px',
+                      borderRadius: '12px',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      <Building2 size={12} color="var(--primary-color)" /> {branchObj.name}
+                    </div>
                   )}
                 </div>
 
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 800 }}>{t.name}</h3>
-                <div style={{ fontSize: '0.85rem', color: 'var(--primary-color)', fontWeight: 700, marginBottom: '8px' }}>
-                  📚 {t.subject || 'O\'qituvchi'}
-                </div>
-
-                <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', marginBottom: '12px', minHeight: '40px' }}>
-                  {t.bio || 'Ma\'lumot kiritilmagan'}
-                </p>
-
-                {/* Certificates */}
-                {t.certificates && (
-                  <div style={{ fontSize: '0.8rem', background: 'rgba(255,255,255,0.04)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', marginBottom: '12px' }}>
-                    <strong>🏆 Sertifikatlar:</strong> {t.certificates}
+                {/* Avatar & Content */}
+                <div style={{ padding: '0 20px 20px 20px', marginTop: '-36px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  <div style={{
+                    width: '68px',
+                    height: '68px',
+                    borderRadius: '50%',
+                    border: '4px solid var(--bg-card)',
+                    background: 'var(--primary-color)',
+                    overflow: 'hidden',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 800,
+                    fontSize: '1.3rem',
+                    color: '#FFF',
+                    boxShadow: '0 4px 10px rgba(0,0,0,0.3)'
+                  }}>
+                    {t.avatar ? (
+                      <img src={t.avatar} alt={t.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      t.name.charAt(0)
+                    )}
                   </div>
-                )}
 
-                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '10px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  📞 {t.phone}
-                </div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)' }}>{t.name}</h3>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--primary-color)', fontWeight: 700, marginBottom: '6px' }}>
+                    📚 {t.subject || 'O\'qituvchi'}
+                  </div>
 
-                {/* Admin Only Salary & Actions */}
-                {isAdmin ? (
-                  <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ padding: '8px 10px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--success)', borderRadius: 'var(--radius-md)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', fontWeight: 700, color: 'var(--success)' }}>
-                        <span>👑 Oylik maoshi:</span>
-                        <span>{(t.salary || 0).toLocaleString()} so'm</span>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '10px', minHeight: '34px' }}>
+                    {t.bio || 'Bio kiritilmagan'}
+                  </p>
+
+                  {/* Student & Group count badge */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    background: 'rgba(255,255,255,0.03)',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.8rem',
+                    marginBottom: '12px'
+                  }}>
+                    <span>👥 Guruhlar: <strong>{t.group_count || 0} ta</strong></span>
+                    <span>👨‍🎓 O'quvchilar: <strong>{t.student_count || 0} ta</strong></span>
+                  </div>
+
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                    📞 {t.phone}
+                  </div>
+
+                  {/* Salary Percent Calculation Box - User Core Requirement */}
+                  {(isAdmin || isManager) ? (
+                    <div style={{
+                      marginTop: 'auto',
+                      padding: '12px',
+                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(79, 70, 229, 0.08))',
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      borderRadius: 'var(--radius-md)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        <span>💰 Oylik Tushum:</span>
+                        <strong style={{ color: '#FFF' }}>{(t.monthly_revenue || 0).toLocaleString()} so'm</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        <span>📊 Belgilangan Foiz:</span>
+                        <span className="badge badge-warning" style={{ fontSize: '0.75rem', padding: '2px 8px' }}>
+                          {t.salary_percent || 50}%
+                        </span>
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        borderTop: '1px dashed rgba(255,255,255,0.15)',
+                        paddingTop: '6px',
+                        marginTop: '2px'
+                      }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--success)' }}>💵 Oylik Maoshi:</span>
+                        <strong style={{ fontSize: '1.05rem', color: 'var(--success)' }}>
+                          {(t.calculated_salary || 0).toLocaleString()} so'm
+                        </strong>
                       </div>
                     </div>
+                  ) : (
+                    <div style={{ marginTop: 'auto', fontSize: '0.75rem', color: 'var(--text-dim)', textAlign: 'center' }}>
+                      <Lock size={12} /> Maosh ma'lumotlari xavfsiz himoyalangan
+                    </div>
+                  )}
 
-                    <button
-                      className="btn btn-danger btn-sm"
-                      style={{ width: '100%', marginTop: '4px' }}
-                      onClick={() => {
-                        setSelectedTeacherForOffboard(t);
-                        setReassignTeacherId('');
-                        setArchiveAction('reassign');
-                      }}
-                    >
-                      <UserX size={14} /> Ishdan Bo'shatish / Arxivlash
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ marginTop: '12px', fontSize: '0.75rem', color: 'var(--text-dim)', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                    <Lock size={12} /> Maosh va o'quvchilar soni faqat Adminga ko'rinadi
-                  </div>
-                )}
+                  {/* Admin / Manager Action Buttons */}
+                  {hasEditPermission && (
+                    <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ flex: 1 }}
+                        onClick={() => handleOpenAdminEdit(t)}
+                      >
+                        <Edit size={14} /> Profilni Tahrirlash
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        title="Bo'shatish / Arxivlash"
+                        onClick={() => {
+                          setSelectedTeacherForOffboard(t);
+                          setReassignTeacherId('');
+                          setArchiveAction('reassign');
+                        }}
+                      >
+                        <UserX size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {/* Admin Offboard Teacher Modal */}
+      {/* Admin / Manager Edit Teacher Modal */}
+      {editingTeacher && (
+        <div className="modal-overlay" onClick={() => setEditingTeacher(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '540px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit size={20} color="var(--primary-color)" /> O'qituvchi Profilini Tahrirlash
+              </h3>
+              <button className="close-btn" onClick={() => setEditingTeacher(null)}>✕</button>
+            </div>
+
+            {editError && <div className="badge badge-danger" style={{ width: '100%', padding: '10px', marginBottom: '14px' }}>{editError}</div>}
+
+            <form onSubmit={handleAdminEditSubmit}>
+              <div className="form-group">
+                <label className="form-label">O'qituvchi F.I.O.:</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Telefon Raqami (Login):</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={editPhone}
+                    onChange={e => setEditPhone(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Yangi Parol (ixtiyoriy):</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="O'zgartirmaslik uchun bo'sh qoldiring"
+                    value={editPassword}
+                    onChange={e => setEditPassword(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Dars Beradigan Fani:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={editSubject}
+                    onChange={e => setEditSubject(e.target.value)}
+                  />
+                </div>
+
+                {isAdmin && (
+                  <div className="form-group">
+                    <label className="form-label">Biriktirilgan Filiali:</label>
+                    <select
+                      className="form-control"
+                      value={editBranchId}
+                      onChange={e => setEditBranchId(e.target.value)}
+                    >
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Salary Percentage Field - Core Requirement */}
+              <div style={{
+                background: 'rgba(79, 70, 229, 0.08)',
+                border: '1px solid var(--primary-color)',
+                borderRadius: 'var(--radius-md)',
+                padding: '16px',
+                marginTop: '10px',
+                marginBottom: '16px'
+              }}>
+                <label className="form-label" style={{ fontWeight: 700, color: 'var(--primary-color)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Percent size={16} /> Oylik Maosh Foiz Stavkasi (%):
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    className="form-control"
+                    style={{ fontSize: '1.2rem', fontWeight: 800, width: '120px' }}
+                    value={editSalaryPercent}
+                    onChange={e => setEditSalaryPercent(e.target.value)}
+                    required
+                  />
+                  <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>%</span>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    O'quvchilardan tushgan oylik to'lovning necha foizi o'qituvchiga maosh bo'lib hisoblanishi
+                  </div>
+                </div>
+
+                {/* Live Formula Preview */}
+                <div style={{
+                  marginTop: '10px',
+                  padding: '10px',
+                  background: 'rgba(0,0,0,0.3)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.82rem',
+                  color: 'var(--success)'
+                }}>
+                  💡 <strong>Misol:</strong> Agar oy davomida 22 000 000 so'm tushsa → <strong>{editSalaryPercent || 0}%</strong> stavka bilan o'qituvchi oyligi: <strong>{((22000000 * (Number(editSalaryPercent) || 0)) / 100).toLocaleString()} so'm</strong> bo'ladi.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setEditingTeacher(null)}>
+                  Bekor qilish
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={editSaving}>
+                  {editSaving ? 'Saqlanmoqda...' : 'O\'zgarishlarni Saqlash'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Teacher Modal */}
+      {showAddModal && (
+        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">➕ Yangi O'qituvchi Qo'shish</h3>
+              <button className="close-btn" onClick={() => setShowAddModal(false)}>✕</button>
+            </div>
+
+            {error && <div className="badge badge-danger" style={{ width: '100%', padding: '10px', marginBottom: '14px' }}>{error}</div>}
+
+            <form onSubmit={handleCreateTeacher}>
+              <div className="form-group">
+                <label className="form-label">O'qituvchi F.I.O.:</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="masalan: Bekzod Rahimov"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Telefon Raqami (Login):</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="+998 90 123 45 67"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Dastlabki Parol:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Dars Beradigan Fani:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="masalan: Ingliz tili / IELTS"
+                    value={subject}
+                    onChange={e => setSubject(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Oylik Foiz Stavkasi (%):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    className="form-control"
+                    value={salaryPercent}
+                    onChange={e => setSalaryPercent(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              {isAdmin && (
+                <div className="form-group">
+                  <label className="form-label">Filial:</label>
+                  <select
+                    className="form-control"
+                    value={teacherBranchId}
+                    onChange={e => setTeacherBranchId(e.target.value)}
+                  >
+                    {branches.map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label className="form-label">Sertifikatlari (ixtiyoriy):</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="masalan: IELTS 8.5, TESOL"
+                  value={certificates}
+                  onChange={e => setCertificates(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>
+                  Bekor qilish
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Qo'shish
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Self Edit Profile Modal */}
+      {showSelfEditModal && (
+        <div className="modal-overlay" onClick={() => setShowSelfEditModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">✏️ Shaxsiy Profilimni Tahrirlash</h3>
+              <button className="close-btn" onClick={() => setShowSelfEditModal(false)}>✕</button>
+            </div>
+
+            {selfError && <div className="badge badge-danger" style={{ width: '100%', padding: '10px', marginBottom: '14px' }}>{selfError}</div>}
+
+            <form onSubmit={handleSelfEditSubmit}>
+              <div className="form-group">
+                <label className="form-label">Ism Familiya:</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={selfName}
+                  onChange={e => setSelfName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Mutaxassislik / Fan:</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={selfSubject}
+                  onChange={e => setSelfSubject(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Bio (O'zingiz haqingizda qisqacha):</label>
+                <textarea
+                  className="form-control"
+                  rows="3"
+                  value={selfBio}
+                  onChange={e => setSelfBio(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Profil Rasmi (Avatar):</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="form-control"
+                  onChange={e => setAvatarFile(e.target.files[0])}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowSelfEditModal(false)}>
+                  Bekor qilish
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Saqlash
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Offboard Teacher Modal */}
       {selectedTeacherForOffboard && (
         <div className="modal-overlay" onClick={() => setSelectedTeacherForOffboard(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
@@ -270,10 +728,7 @@ export default function TeachersPage({ user, onUpdateCurrentUser }) {
                       checked={archiveAction === 'reassign'}
                       onChange={() => setArchiveAction('reassign')}
                     />
-                    <div>
-                      <strong style={{ fontSize: '0.9rem' }}>🔄 Boshqa aktiv o'qituvchiga biriktirish</strong>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Guruhlar va o'quvchilar yangi o'qituvchiga o'tkaziladi</div>
-                    </div>
+                    <span>Barcha guruhlarini boshqa o'qituvchiga biriktirish (Tavsiya etiladi)</span>
                   </label>
 
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: 'var(--radius-md)' }}>
@@ -284,126 +739,35 @@ export default function TeachersPage({ user, onUpdateCurrentUser }) {
                       checked={archiveAction === 'archive'}
                       onChange={() => setArchiveAction('archive')}
                     />
-                    <div>
-                      <strong style={{ fontSize: '0.9rem' }}>📁 Guruhlar va O'quvchilarni Arxivga O'tkazish</strong>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Guruh va o'quvchilar tugatilgan bo'lsa arxivda saqlanadi</div>
-                    </div>
+                    <span>Barcha guruhlarini ham arxivlash</span>
                   </label>
                 </div>
               </div>
 
               {archiveAction === 'reassign' && (
                 <div className="form-group">
-                  <label className="form-label">Yangi O'qituvchini Tanlang:</label>
+                  <label className="form-label">Yangi Qabul Qiluvchi O'qituvchini Tanlang:</label>
                   <select
                     className="form-control"
                     value={reassignTeacherId}
                     onChange={e => setReassignTeacherId(e.target.value)}
                     required
                   >
-                    <option value="">-- Yangi o'qituvchini tanlang --</option>
+                    <option value="">-- O'qituvchini tanlang --</option>
                     {otherTeachers.map(ot => (
-                      <option key={ot.id} value={ot.id}>{ot.name} ({ot.subject})</option>
+                      <option key={ot.id} value={ot.id}>{ot.name} ({ot.subject || 'O\'qituvchi'})</option>
                     ))}
                   </select>
                 </div>
               )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setSelectedTeacherForOffboard(null)}>Bekor qilish</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setSelectedTeacherForOffboard(null)}>
+                  Bekor qilish
+                </button>
                 <button type="submit" className="btn btn-danger" disabled={offboardLoading}>
                   {offboardLoading ? 'Bajarilmoqda...' : 'Tasdiqlash va Bo\'shatish'}
                 </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Admin Add Teacher Modal */}
-      {showAddModal && (
-        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-            <div className="modal-header">
-              <h3 className="modal-title">👨‍🏫 Yangi O'qituvchi Qo'shish</h3>
-              <button className="close-btn" onClick={() => setShowAddModal(false)}>✕</button>
-            </div>
-            {error && <div className="badge badge-danger" style={{ marginBottom: '14px', width: '100%' }}>{error}</div>}
-            <form onSubmit={handleCreateTeacher}>
-              <div className="form-group">
-                <label className="form-label">F.I.O. (Ism va Familiya):</label>
-                <input type="text" className="form-control" value={name} onChange={e => setName(e.target.value)} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Telefon raqam:</label>
-                <input type="text" className="form-control" value={phone} onChange={e => setPhone(e.target.value)} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Parol:</label>
-                <input type="text" className="form-control" value={password} onChange={e => setPassword(e.target.value)} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Fani:</label>
-                <input type="text" className="form-control" placeholder="Masalan: Matematika" value={subject} onChange={e => setSubject(e.target.value)} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Bio / Haqida ma'lumot:</label>
-                <textarea className="form-control" value={bio} onChange={e => setBio(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Sertifikatlari:</label>
-                <input type="text" className="form-control" placeholder="IELTS 8.0, CELTA" value={certificates} onChange={e => setCertificates(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Oylik maoshi (so'm):</label>
-                <input type="number" className="form-control" value={salary} onChange={e => setSalary(e.target.value)} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Bekor qilish</button>
-                <button type="submit" className="btn btn-primary">Qo'shish</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Teacher Self Edit Profile Modal */}
-      {showEditProfileModal && (
-        <div className="modal-overlay" onClick={() => setShowEditProfileModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
-            <div className="modal-header">
-              <h3 className="modal-title">🖼️ Profilim va Fonnimni Tahrirlash</h3>
-              <button className="close-btn" onClick={() => setShowEditProfileModal(false)}>✕</button>
-            </div>
-            {error && <div className="badge badge-danger" style={{ marginBottom: '14px', width: '100%' }}>{error}</div>}
-            <form onSubmit={handleUpdateProfile}>
-              <div className="form-group">
-                <label className="form-label">Ism Familiyangiz:</label>
-                <input type="text" className="form-control" value={editName} onChange={e => setEditName(e.target.value)} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Profil Rasmi (Avatar upload):</label>
-                <input type="file" accept="image/*" className="form-control" onChange={e => setAvatarFile(e.target.files[0])} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Orqa fon rasmi (Header Background wallpaper upload):</label>
-                <input type="file" accept="image/*" className="form-control" onChange={e => setBgFile(e.target.files[0])} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Dars beradigan faningiz:</label>
-                <input type="text" className="form-control" value={editSubject} onChange={e => setEditSubject(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Bio (O'zingiz haqingizda):</label>
-                <textarea className="form-control" value={editBio} onChange={e => setEditBio(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Sertifikatlar:</label>
-                <input type="text" className="form-control" value={editCerts} onChange={e => setEditCerts(e.target.value)} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowEditProfileModal(false)}>Bekor qilish</button>
-                <button type="submit" className="btn btn-primary">Saqlash</button>
               </div>
             </form>
           </div>

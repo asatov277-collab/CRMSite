@@ -4,8 +4,8 @@ import { api } from '../services/api';
 import SMSResetModal from '../components/SMSResetModal';
 
 export default function LoginPage({ onLoginSuccess, settings }) {
-  const [phone, setPhone] = useState('+998 97 799 97 96');
-  const [password, setPassword] = useState('977999796');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [code, setCode] = useState(settings?.login_code || 'westminster.uz');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,11 +26,6 @@ export default function LoginPage({ onLoginSuccess, settings }) {
     } finally {
       setLoading(false);
     }
-  };
-
-  const fillQuickDemo = () => {
-    setPhone('+998 97 799 97 96');
-    setPassword('977999796');
   };
 
   return (
@@ -130,13 +125,6 @@ export default function LoginPage({ onLoginSuccess, settings }) {
             <LogIn size={18} /> {loading ? 'Tizimga kirilmoqda...' : 'Tizimga Kirish'}
           </button>
         </form>
-
-        {/* Fast Admin Login Helper */}
-        <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '10px' }}>Administrator Kirishi:</div>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-          </div>
-        </div>
       </div>
 
       <SMSResetModal isOpen={showSMSModal} onClose={() => setShowSMSModal(false)} />

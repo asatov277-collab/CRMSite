@@ -1,40 +1,42 @@
 @echo off
-title WESTMINSTER CRM SERVER ISHGA TUSHIRISH
+chcp 65001 >nul
+title WESTMINSTER CRM - PRODUCTION SERVER
 cd /d "%~dp0"
 cls
-echo ============================================================
-echo   🏛️ WESTMINSTER CRM EDUCATIONAL CENTER SERVER
-echo ============================================================
-echo.
-echo Server ishga tushmoqda...
-echo.
 
-set MYIP=
-for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4 Address"') do (
-    set MYIP=%%a
-)
-set MYIP=%MYIP: =%
-
-echo [1] Ushbu kompyuteringizda kirish: http://localhost:8000
-echo [2] Bir xil Wi-Fi ga ulangan telefonlardan kirish: http://%MYIP%:8000
-echo [3] Butun Internetdagilar (boshqa shahardagilar) kirishi uchun:
-echo     Papkadagi "INTERNETGA_ULASHISH.bat" faylini ham bosing!
-echo.
-echo Serverni to'xtatish uchun ushbu oynada Ctrl + C bosing.
+echo ============================================================
+echo   🏛️ WESTMINSTER CRM EDUCATIONAL CENTER - PRODUCTION SERVER
 echo ============================================================
 echo.
 
 where python >nul 2>nul
-if %errorlevel% equ 0 (
-    python run_server.py
-) else (
+if %errorlevel% neq 0 (
     where py >nul 2>nul
-    if %errorlevel% equ 0 (
-        py run_server.py
-    ) else (
-        echo [XATOLIK] Python kompyuteringizda o'rnatilmagan yoki PATH ga qo'shilmagan!
-        echo Iltimos, Python (https://www.python.org) ni o'rnating va "Add Python to PATH" katagiga belgi qo'ying.
+    if %errorlevel% neq 0 (
+        echo [XATOLIK] Python kompyuteringizda topilmadi!
+        echo Iltimos, Python (https://www.python.org) ni o'rnating.
+        echo O'rnatayotganda "Add Python to PATH" katagiga belgi qo'ying!
+        echo.
+        pause
+        exit /b
     )
 )
+
+echo Bog'liqliklar tekshirilmoqda...
+python -c "import fastapi, uvicorn, pydantic" >nul 2>nul
+if %errorlevel% neq 0 (
+    echo.
+    echo [*] Kerakli Python kutubxonalari o'rnatilmoqda (fastapi, uvicorn, pydantic)...
+    pip install -r backend\requirements.txt
+    if %errorlevel% neq 0 (
+        echo.
+        echo [XATOLIK] Kutubxonalarni o'rnatishda xatolik yuz berdi. Internet aloqasini tekshiring.
+        pause
+        exit /b
+    )
+)
+
+echo.
+python run_server.py
 
 pause

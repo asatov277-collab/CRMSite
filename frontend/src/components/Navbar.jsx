@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, LogOut, Wifi, WifiOff, User, Settings as SettingsIcon } from 'lucide-react';
+import { Search, LogOut, Wifi, WifiOff, User, Building2, X } from 'lucide-react';
 import { offlineSync } from '../services/offlineSync';
 
-export default function Navbar({ user, settings, onOpenSearch, onLogout, onNavigate }) {
+export default function Navbar({ user, settings, onOpenSearch, onLogout, onNavigate, activeBranch, onClearActiveBranch }) {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingSyncs, setPendingSyncs] = useState(0);
 
@@ -31,30 +31,69 @@ export default function Navbar({ user, settings, onOpenSearch, onLogout, onNavig
       borderBottom: '1px solid var(--border-color)',
       display: 'flex',
       alignItems: 'center',
-      justify: 'space-between',
+      justifyContent: 'space-between',
       padding: '0 24px',
       position: 'sticky',
       top: 0,
       zIndex: 100
     }}>
-      {/* Search trigger */}
-      <div 
-        onClick={onOpenSearch}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          background: 'rgba(0, 0, 0, 0.3)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '20px',
-          padding: '8px 16px',
-          cursor: 'pointer',
-          width: '320px',
-          color: 'var(--text-muted)'
-        }}
-      >
-        <Search size={18} />
-        <span style={{ fontSize: '0.9rem' }}>Ism, guruh, tel qidiruv...</span>
+      {/* Left Search & Branch info */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div 
+          onClick={onOpenSearch}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            background: 'rgba(0, 0, 0, 0.3)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '20px',
+            padding: '8px 16px',
+            cursor: 'pointer',
+            width: '280px',
+            color: 'var(--text-muted)'
+          }}
+        >
+          <Search size={18} />
+          <span style={{ fontSize: '0.9rem' }}>Ism, guruh, tel qidiruv...</span>
+        </div>
+
+        {/* Active Branch Chip */}
+        {activeBranch && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'rgba(79, 70, 229, 0.15)',
+            border: '1px solid var(--primary-color)',
+            padding: '6px 14px',
+            borderRadius: '20px',
+            fontSize: '0.84rem',
+            color: '#FFF'
+          }}>
+            <Building2 size={16} color="var(--primary-color)" />
+            <span>Faol filial: <strong>{activeBranch.name}</strong></span>
+            <button
+              onClick={onClearActiveBranch}
+              style={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: 'none',
+                borderRadius: '50%',
+                width: '18px',
+                height: '18px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: '#FFF',
+                marginLeft: '4px'
+              }}
+              title="Barcha filiallar rejimiga qaytish"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Center title & User controls */}

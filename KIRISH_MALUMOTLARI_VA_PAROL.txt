@@ -1,5 +1,5 @@
 ================================================================================
-  🏛️ WESTMINSTER CRM - KIRISH MA'LUMOTLARI VA YO'RIQNOMA
+  🏛️ WESTMINSTER CRM - PRODUCTION RELEASE YO'RIQNOMASI
 ================================================================================
 
 🔐 YAGONA ADMINISTRATOR HISOBI:
@@ -18,12 +18,27 @@
    [2] Bir xil Wi-Fi tarmoqdagilar (Telefon, Noutbuklar) uchun:
        👉 http://<KOMPYUTER-IP-MANZILI>:8000
 
-   [3] Butun Internetdagilar (Mobil 4G/5G, boshqa shahardagilar) uchun:
+   [3] Butun Internet (Mobil 4G/5G, boshqa shahardagilar) uchun:
        👉 Papkadagi "INTERNETGA_ULASHISH.bat" faylini bosing!
+       👉 Havola: https://westminster-crm.loca.lt
 
 --------------------------------------------------------------------------------
-🚀 SERVERNI ISHGA TUSHIRISH:
-   1. Papkadagi "ISHGA_TUSHIRISH.bat" faylini 2 marta bosing.
-   2. Qora oyna yopilmay turishi kerak (server shu oynada ishlaydi).
-   3. Brauzerda http://localhost:8000 manzilliga kiring.
+🚀 SERVERNI BOSHQARISH IMKONIYATLARI:
+--------------------------------------------------------------------------------
+   1. ISHGA TUSHIRISH (Konsol bilan):
+      👉 "ISHGA_TUSHIRISH.bat" ni 2 marta bosing.
+
+   2. QORA OYNASIZ ISHLATISH (Tavsiya etiladi!):
+      👉 "FONDA_ISHGA_TUSHIRISH.vbs" ni 2 marta bosing.
+      (Hech qanday qora oyna xalaqit bermaydi, tizim brauzeringizda ochiladi).
+
+   3. SERVERNI TO'XTATISH:
+      👉 "SERVERNI_TOXTATISH.bat" ni bosing.
+
+   4. WINDOWS YOQILGANDA AVTOMATIK ISHGA TUSHISH:
+      👉 "WINDOWS_BILAN_YONISHGA_QOSHISH.bat" ni bosing.
+      (Kompyuter har safar yoqilganda CRM o'zi orqa fonda ishlab turadi).
+
+   5. ISH STOLIGA (DESKTOP) YORLIQ YARATISH:
+      👉 "CREATE_DESKTOP_SHORTCUT.vbs" ni bosing.
 ================================================================================

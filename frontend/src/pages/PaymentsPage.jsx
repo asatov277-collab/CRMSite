@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { CreditCard, Share2, Plus, Banknote, FileCheck, CheckCircle, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { CreditCard, Share2, Plus, Banknote, FileCheck, CheckCircle, AlertCircle, Calendar, Users, UserX } from 'lucide-react';
 import { api } from '../services/api';
 import PaymentModal from '../components/PaymentModal';
 import ShareReportModal from '../components/ShareReportModal';
@@ -30,7 +30,7 @@ export default function PaymentsPage({ user }) {
   const fetchGroups = async () => {
     try {
       const data = await api.getGroups(user?.role === 'teacher' ? user.id : null);
-      setGroups(data);
+      setGroups(data || []);
     } catch (err) {
       console.error('Failed to fetch groups:', err);
     }
@@ -44,8 +44,8 @@ export default function PaymentsPage({ user }) {
         api.getStudents(selectedGroupId || null, 0, isTeacher ? user.id : null),
         api.getPayments(month, selectedGroupId || null, isTeacher ? user.id : null)
       ]);
-      setStudents(stList);
-      setPayments(payList);
+      setStudents(stList || []);
+      setPayments(payList || []);
     } catch (err) {
       console.error('Failed to load payments:', err);
     } finally {
@@ -53,8 +53,48 @@ export default function PaymentsPage({ user }) {
     }
   };
 
-  // Aggregation stats
+  // Only show students who were actually enrolled in or before this month, OR have a payment record in this month
+  const displayedStudents = useMemo(() => {
+    // 1. Filter students from stList who were enrolled in or before this month
+    const valid = students.filter(st => {
+      const enrollMonth = st.created_at ? st.created_at.slice(0, 7) : '';
+      const hasPaymentInMonth = payments.some(p => p.student_id === st.id);
+      
+      // If student has a payment record in this month, they definitely studied in this month
+      if (hasPaymentInMonth) return true;
+      
+      // If student was enrolled in or before this month, they studied in this month
+      if (enrollMonth && enrollMonth <= month) return true;
+      
+      // If student joined in a future month compared to selected month, they were not here yet
+      return false;
+    });
+
+    // 2. Also include any students present in payments (e.g. archived students who paid in this month)
+    payments.forEach(p => {
+      if (!valid.some(s => s.id === p.student_id)) {
+        valid.push({
+          id: p.student_id,
+          name: p.student_name,
+          phone: p.student_phone || '',
+          parent_phone: p.parent_phone || '',
+          group_ids: [p.group_id],
+          created_at: p.date || month,
+          archived: 1
+        });
+      }
+    });
+
+    return valid;
+  }, [students, payments, month]);
+
+  // Aggregation stats for the selected month
   const totalPaidCount = payments.filter(p => p.paid === 1).length;
+  const unpaidCount = displayedStudents.filter(st => {
+    const pay = payments.find(p => p.student_id === st.id);
+    return !pay || pay.paid !== 1;
+  }).length;
+
   const cashSum = payments.filter(p => p.paid === 1 && (p.method === 'naqd' || p.method === 'cash')).reduce((a, b) => a + (b.amount || 0), 0);
   const cardSum = payments.filter(p => p.paid === 1 && (p.method === 'karta' || p.method === 'card')).reduce((a, b) => a + (b.amount || 0), 0);
   const grandTotal = cashSum + cardSum;
@@ -71,7 +111,7 @@ export default function PaymentsPage({ user }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
         <div>
           <h1 style={{ fontSize: '1.6rem', fontWeight: 800 }}>💳 To'lovlar va Moliya Boshqaruvi</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
@@ -91,8 +131,10 @@ export default function PaymentsPage({ user }) {
           <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--success)', marginTop: '4px' }}>
             {grandTotal.toLocaleString()} so'm
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            To'laganlar: {totalPaidCount} ta o'quvchi
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '10px' }}>
+            <span>To'laganlar: <strong style={{ color: 'var(--success)' }}>{totalPaidCount} ta</strong></span>
+            <span>|</span>
+            <span>Qarzdorlar: <strong style={{ color: unpaidCount > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>{unpaidCount} ta</strong></span>
           </div>
         </div>
 
@@ -119,8 +161,10 @@ export default function PaymentsPage({ user }) {
 
       {/* Filter bar */}
       <div className="card" style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ width: '200px' }}>
-          <label className="form-label">Oy (Month):</label>
+        <div style={{ width: '220px' }}>
+          <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Calendar size={15} color="var(--primary-color)" /> Oy (Month):
+          </label>
           <input
             type="month"
             className="form-control"
@@ -141,6 +185,12 @@ export default function PaymentsPage({ user }) {
               <option key={g.id} value={g.id}>{g.name} ({g.subject})</option>
             ))}
           </select>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', alignSelf: 'flex-end', paddingBottom: '6px' }}>
+          <span className="badge badge-info" style={{ padding: '8px 12px', fontSize: '0.85rem' }}>
+            {month} oyida o'qiganlar: {displayedStudents.length} ta o'quvchi
+          </span>
         </div>
       </div>
 
@@ -164,7 +214,7 @@ export default function PaymentsPage({ user }) {
               </tr>
             </thead>
             <tbody>
-              {students.map((st, i) => {
+              {displayedStudents.map((st, i) => {
                 const pay = payments.find(p => p.student_id === st.id);
                 const isPaid = pay?.paid === 1;
 
@@ -223,10 +273,16 @@ export default function PaymentsPage({ user }) {
                   </tr>
                 );
               })}
-              {students.length === 0 && (
+              {displayedStudents.length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                    O'quvchilar topilmadi
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                    <Calendar size={32} style={{ opacity: 0.3, marginBottom: '8px' }} />
+                    <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-main)' }}>
+                      Ushbu oy ({month}) bo'yicha o'quvchilar mavjud emas
+                    </div>
+                    <div style={{ fontSize: '0.84rem', marginTop: '4px' }}>
+                      O'quvchilar bu oyda hali o'quv markazida o'qimagan yoki ro'yxatdan o'tmagan.
+                    </div>
                   </td>
                 </tr>
               )}
@@ -250,13 +306,15 @@ export default function PaymentsPage({ user }) {
       )}
 
       {/* Share Report Modal */}
-      <ShareReportModal
-        isOpen={showShareReportModal}
-        month={month}
-        groupId={selectedGroupId}
-        teacherId={user?.role === 'teacher' ? user.id : null}
-        onClose={() => setShowShareReportModal(false)}
-      />
+      {showShareReportModal && (
+        <ShareReportModal
+          isOpen={showShareReportModal}
+          month={month}
+          groupId={selectedGroupId}
+          teacherId={user?.role === 'teacher' ? user.id : null}
+          onClose={() => setShowShareReportModal(false)}
+        />
+      )}
     </div>
   );
 }

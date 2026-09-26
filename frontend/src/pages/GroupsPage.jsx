@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { UserCheck, Plus, Clock, MapPin, Trash2, AlertTriangle } from 'lucide-react';
 import { api } from '../services/api';
 
-export default function GroupsPage({ user }) {
+export default function GroupsPage({ user, activeBranch }) {
   const [groups, setGroups] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,16 +20,17 @@ export default function GroupsPage({ user }) {
   const [infoMsg, setInfoMsg] = useState('');
 
   const isAdmin = user?.role === 'admin';
+  const branchId = activeBranch ? activeBranch.id : null;
 
   useEffect(() => {
     loadData();
-  }, [user]);
+  }, [user, branchId]);
 
   const loadData = async () => {
     setLoading(true);
     try {
       const [grList, tList] = await Promise.all([
-        api.getGroups(user?.role === 'teacher' ? user.id : null),
+        api.getGroups(user?.role === 'teacher' ? user.id : null, branchId),
         api.getUsers('teacher')
       ]);
       setGroups(grList);
@@ -56,7 +57,8 @@ export default function GroupsPage({ user }) {
         teacher_id: teacherId || user.id,
         schedule,
         room,
-        price: Number(price) || 0
+        price: Number(price) || 0,
+        branch_id: branchId || 'b_main'
       });
       setShowAddModal(false);
       setName('');
