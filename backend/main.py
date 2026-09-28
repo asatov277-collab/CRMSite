@@ -4,6 +4,8 @@ import json
 import uuid
 import shutil
 import re
+import threading
+import requests
 from datetime import datetime, timedelta
 from typing import Optional, List
 
@@ -54,6 +56,109 @@ if os.path.exists(assets_dir):
 
 # Store OTP reset codes temporarily
 OTP_STORE = {}
+
+# ===================== TELEGRAM BOT CONFIG =====================
+TELEGRAM_BOT_TOKEN = "8318395303:AAGBPdtIB3_V-1yB5pBdPCd6ipqsvQZRDYw"
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+
+def tg_send_message(chat_id: int, text: str):
+    """Send message to a Telegram chat."""
+    try:
+        requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML"
+        }, timeout=10)
+    except Exception as e:
+        print(f"[TG] Send error: {e}")
+
+def tg_normalize_phone(phone: str) -> str:
+    """Normalize phone: remove spaces, dashes, keep digits only, last 9 digits."""
+    digits = re.sub(r'\D', '', phone)
+    return digits[-9:] if len(digits) >= 9 else digits
+
+def tg_polling_thread():
+    """Background thread: polls Telegram for new messages and registers users."""
+    offset = None
+    print("[TG] Telegram bot polling started.")
+    while True:
+        try:
+            params = {"timeout": 30, "allowed_updates": ["message"]}
+            if offset:
+                params["offset"] = offset
+            resp = requests.get(f"{TELEGRAM_API_URL}/getUpdates", params=params, timeout=40)
+            data = resp.json()
+            if not data.get("ok"):
+                import time; time.sleep(5); continue
+
+            for update in data.get("result", []):
+                offset = update["update_id"] + 1
+                msg = update.get("message", {})
+                if not msg:
+                    continue
+                chat_id = msg["chat"]["id"]
+                text = (msg.get("text") or "").strip()
+
+                # User sends their phone number to register
+                # Format: /start +998901234567  OR  just the phone number
+                phone_input = None
+                if text.startswith("/start"):
+                    parts = text.split(maxsplit=1)
+                    if len(parts) > 1:
+                        phone_input = parts[1].strip()
+                    else:
+                        tg_send_message(chat_id,
+                            "👋 <b>WESTMINSTER CRM</b> botiga xush kelibsiz!\n\n"
+                            "📱 Telefon raqamingizni yuboring:\n"
+                            "Masalan: <code>+998901234567</code>\n\n"
+                            "Shundan so'ng parol almashtirishda kod shu Telegramga keladi."
+                        )
+                        continue
+                else:
+                    # Maybe user just sent phone number
+                    if re.search(r'\d{7,}', text):
+                        phone_input = text
+
+                if phone_input:
+                    phone_digits = tg_normalize_phone(phone_input)
+                    conn = get_db()
+                    try:
+                        # Find user by phone (last 9 digits)
+                        rows = conn.execute("SELECT id, name, phone FROM users WHERE archived = 0 AND role != 'admin'").fetchall()
+                        found = None
+                        for row in rows:
+                            db_digits = tg_normalize_phone(row["phone"])
+                            if db_digits == phone_digits and len(phone_digits) >= 7:
+                                found = dict(row)
+                                break
+
+                        if found:
+                            # Save chat_id mapping
+                            now_ts = datetime.now().isoformat()
+                            conn.execute(
+                                "INSERT OR REPLACE INTO telegram_chats (phone, chat_id, registered_at) VALUES (?, ?, ?)",
+                                (phone_digits, chat_id, now_ts)
+                            )
+                            conn.commit()
+                            tg_send_message(chat_id,
+                                f"✅ <b>{found['name']}</b>, siz muvaffaqiyatli ro'yxatdan o'tdingiz!\n\n"
+                                "Endi parol almashtirishda tasdiqlash kodi shu Telegramga keladi. 🔐"
+                            )
+                        else:
+                            tg_send_message(chat_id,
+                                "❌ Bu telefon raqam tizimda topilmadi.\n\n"
+                                "Iltimos, CRM dagi telefon raqamingizni kiriting."
+                            )
+                    finally:
+                        conn.close()
+        except Exception as e:
+            print(f"[TG] Polling error: {e}")
+            import time; time.sleep(5)
+
+# Start Telegram polling in background
+_tg_thread = threading.Thread(target=tg_polling_thread, daemon=True)
+_tg_thread.start()
+# ===============================================================
 
 # File size limits (in bytes)
 MAX_IMAGE_SIZE = 20 * 1024 * 1024       # 20 MB
@@ -170,23 +275,52 @@ def forgot_password(req: ForgotPasswordRequest):
     cursor = conn.cursor()
     phone_clean = req.phone.strip().replace(" ", "").replace("-", "")
 
-    cursor.execute("SELECT id, name FROM users WHERE REPLACE(REPLACE(phone, ' ', ''), '-', '') = ? AND archived = 0", (phone_clean,))
-    user = cursor.fetchone()
-    conn.close()
+    # Find user by phone (last 9 digits match)
+    phone_digits = tg_normalize_phone(phone_clean)
+    cursor.execute("SELECT id, name, phone FROM users WHERE archived = 0 AND role != 'admin'")
+    all_users = cursor.fetchall()
+    user = None
+    for u in all_users:
+        db_digits = tg_normalize_phone(u["phone"])
+        if db_digits == phone_digits and len(phone_digits) >= 7:
+            user = dict(u)
+            break
 
     if not user:
+        conn.close()
         raise HTTPException(status_code=404, detail="Ushbu telefon raqamli foydalanuvchi topilmadi!")
 
+    # Check if user registered Telegram bot
+    tg_row = conn.execute(
+        "SELECT chat_id FROM telegram_chats WHERE phone = ?", (phone_digits,)
+    ).fetchone()
+    conn.close()
+
+    if not tg_row:
+        raise HTTPException(
+            status_code=400,
+            detail="Siz hali Telegram botni ro'yxatdan o'tkazmagansiz! "
+                   "Botga /start yozing va telefon raqamingizni yuboring."
+        )
+
     otp_code = str(uuid.uuid4().int)[:6]
-    OTP_STORE[phone_clean] = {
+    OTP_STORE[phone_digits] = {
         "code": otp_code,
         "expires_at": datetime.now() + timedelta(minutes=10)
     }
 
+    # Send OTP via Telegram
+    tg_send_message(int(tg_row["chat_id"]),
+        f"🔐 <b>WESTMINSTER CRM</b>\n\n"
+        f"Parol tiklash kodi:\n\n"
+        f"<code>{otp_code}</code>\n\n"
+        f"⏳ Kod 10 daqiqa davomida amal qiladi.\n"
+        f"Kodni hech kimga bermang!"
+    )
+
     return {
         "success": True,
-        "message": f"SMS tasdiqlash kodi {req.phone} raqamiga yuborildi.",
-        "debug_otp": otp_code  # For local simulation testing
+        "message": "Tasdiqlash kodi Telegramga yuborildi! ✅"
     }
 
 class VerifyResetPasswordRequest(BaseModel):
@@ -196,26 +330,37 @@ class VerifyResetPasswordRequest(BaseModel):
 
 @app.post("/api/auth/verify-reset-password")
 def verify_reset_password(req: VerifyResetPasswordRequest):
-    phone_clean = req.phone.strip().replace(" ", "").replace("-", "")
-    
-    if phone_clean not in OTP_STORE:
+    phone_digits = tg_normalize_phone(req.phone.strip())
+
+    if phone_digits not in OTP_STORE:
         raise HTTPException(status_code=400, detail="Tasdiqlash kodi so'ralmagan yoki muddati o'tgan!")
 
-    stored_otp = OTP_STORE[phone_clean]
+    stored_otp = OTP_STORE[phone_digits]
     if stored_otp["code"] != req.otp_code.strip():
-        raise HTTPException(status_code=400, detail="SMS tasdiqlash kodi noto'g'ri!")
+        raise HTTPException(status_code=400, detail="Tasdiqlash kodi noto'g'ri!")
 
     if datetime.now() > stored_otp["expires_at"]:
-        del OTP_STORE[phone_clean]
+        del OTP_STORE[phone_digits]
         raise HTTPException(status_code=400, detail="Kodingiz vaqti o'tib ketgan, qaytadan kiriting.")
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET password = ? WHERE REPLACE(REPLACE(phone, ' ', ''), '-', '') = ?", (req.new_password, phone_clean))
+    # Update password for matching user (by last 9 digits)
+    cursor.execute("SELECT id, phone FROM users WHERE archived = 0 AND role != 'admin'")
+    all_users = cursor.fetchall()
+    updated = False
+    for u in all_users:
+        db_digits = tg_normalize_phone(u["phone"])
+        if db_digits == phone_digits:
+            cursor.execute("UPDATE users SET password = ? WHERE id = ?", (req.new_password, u["id"]))
+            updated = True
+            break
     conn.commit()
     conn.close()
 
-    del OTP_STORE[phone_clean]
+    del OTP_STORE[phone_digits]
+    if not updated:
+        raise HTTPException(status_code=404, detail="Foydalanuvchi topilmadi!")
     return {"success": True, "message": "Parolingiz muvaffaqiyatli yangilandi!"}
 
 class ChangePasswordRequest(BaseModel):

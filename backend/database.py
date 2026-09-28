@@ -159,6 +159,15 @@ def init_db():
     )
     """)
 
+    # Telegram chats table (phone -> chat_id mapping)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS telegram_chats (
+        phone TEXT PRIMARY KEY,
+        chat_id INTEGER NOT NULL,
+        registered_at TEXT NOT NULL
+    )
+    """)
+
     # Safe migrations for existing database
     def add_col_if_missing(tbl, col, col_def):
         try:
