@@ -4,10 +4,14 @@
 
 🔐 YAGONA ADMINISTRATOR HISOBI:
    -----------------------------------------------------------------------------
-   👤 Login / Foydalanuvchi nomi : WESTMINSTER_LC
-   📱 Telefon raqami           : 97 799 97 96  (yoki +998977999796)
-   🔑 Parol                     : 977999796     (yoki 97 799 97 96)
-   🌐 O'quv markazi kodi       : westminster.uz
+   👤 Login (Foydalanuvchi nomi) : Westminster_lc
+   🔑 Parol                      : 977999796
+   🌐 O'quv markazi kodi (Subdomain): WESTMINSTER.uz
+   -----------------------------------------------------------------------------
+   ⚠️ DIQQAT: Admin faqat "Westminster_lc" logini va belgilangan paroli bilan
+   kira oladi. Boshqa login terilsa tizim rad etadi. Parol yangilansa, eski
+   parollar mutlaqo ishlamaydi. O'quv markazi kodi o'zgartirilsa, faqat
+   yangi kod bilan kiriladi.
    -----------------------------------------------------------------------------
 
 🌐 TIZIMGA KIRISH HAVOLALARI (LINKLAR):

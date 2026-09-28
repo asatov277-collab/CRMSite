@@ -203,7 +203,7 @@ def seed_initial_data(cursor):
     cursor.execute("""
     INSERT INTO users (id, role, name, phone, password, bio, subject, certificates, salary)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, ("admin_westminster", "admin", "WESTMINSTER_LC", "+998977999796", "977999796", "WESTMINSTER CRM Bosh Administratori", "Menejment", "CEO & Administrator", 20000000))
+    """, ("admin_westminster", "admin", "WESTMINSTER_LC", "Westminster_lc", "977999796", "WESTMINSTER CRM Bosh Administratori", "Menejment", "CEO & Administrator", 20000000))
 
     # Groups
     cursor.execute("""

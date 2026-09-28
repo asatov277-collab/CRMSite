@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LogIn, KeyRound, ShieldCheck, Phone, Lock, Globe } from 'lucide-react';
 import { api } from '../services/api';
 import SMSResetModal from '../components/SMSResetModal';
@@ -10,6 +10,12 @@ export default function LoginPage({ onLoginSuccess, settings }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSMSModal, setShowSMSModal] = useState(false);
+
+  useEffect(() => {
+    if (settings?.login_code) {
+      setCode(settings.login_code);
+    }
+  }, [settings?.login_code]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -82,15 +88,15 @@ export default function LoginPage({ onLoginSuccess, settings }) {
             />
           </div>
 
-          {/* Phone */}
+          {/* Phone or Login */}
           <div className="form-group">
             <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Phone size={14} /> Telefon Raqam:
+              <Phone size={14} /> Login yoki Telefon Raqam:
             </label>
             <input
               type="text"
               className="form-control"
-              placeholder="+998 90 123 45 67"
+              placeholder="Admin: Westminster_lc | O'qituvchi: +998 90..."
               value={phone}
               onChange={e => setPhone(e.target.value)}
               required

@@ -99,47 +99,59 @@ def login(req: LoginRequest):
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM users WHERE archived = 0")
-    rows = cursor.fetchall()
-    users = [dict(r) for r in rows]
+    # 1. Check Center Code (Subdomain / O'quv markaz kodi)
+    cursor.execute("SELECT login_code FROM system_settings WHERE id = 1")
+    sys_code_row = cursor.fetchone()
+    if sys_code_row and sys_code_row["login_code"]:
+        expected_code = sys_code_row["login_code"].strip().lower()
+        input_code = (req.code or "").strip().lower()
+        if input_code != expected_code:
+            conn.close()
+            raise HTTPException(status_code=400, detail="O'quv markaz kodi (subdomain) noto'g'ri!")
 
     inp = req.phone.strip()
-    digits = re.sub(r'\D', '', inp)
-    last9 = digits[-9:] if len(digits) >= 9 else digits
+    inp_lower = inp.lower()
 
     found_user = None
-    for u in users:
-        u_phone_digits = re.sub(r'\D', '', u['phone'])
-        u_last9 = u_phone_digits[-9:] if len(u_phone_digits) >= 9 else u_phone_digits
-        
-        if (last9 and last9 == u_last9) or inp.lower() in [u['name'].lower(), u['id'].lower(), u['phone'].lower()]:
-            found_user = u
-            break
+
+    # 2. User identification:
+    # If login is Westminster_lc (case-insensitive) -> Matches Admin ONLY!
+    if inp_lower in ["westminster_lc", "westminster"]:
+        cursor.execute("SELECT * FROM users WHERE role = 'admin' AND archived = 0")
+        admin_row = cursor.fetchone()
+        if admin_row:
+            found_user = dict(admin_row)
+    else:
+        # For non-admin accounts (teachers, managers):
+        # Admin can NEVER be matched by phone or anything other than Westminster_lc
+        digits = re.sub(r'\D', '', inp)
+        last9 = digits[-9:] if len(digits) >= 9 else digits
+
+        cursor.execute("SELECT * FROM users WHERE role != 'admin' AND archived = 0")
+        non_admin_users = [dict(r) for r in cursor.fetchall()]
+
+        for u in non_admin_users:
+            u_phone_digits = re.sub(r'\D', '', u['phone'])
+            u_last9 = u_phone_digits[-9:] if len(u_phone_digits) >= 9 else u_phone_digits
+
+            if (last9 and len(last9) >= 7 and last9 == u_last9) or inp_lower == u['phone'].strip().lower():
+                found_user = u
+                break
 
     if not found_user:
         conn.close()
         raise HTTPException(status_code=400, detail="Telefon raqam yoki login topilmadi!")
 
-    valid_passwords = [
-        found_user['password'].strip().lower(),
-        re.sub(r'\D', '', found_user['password']),
-        '977999796',
-        '97 799 97 96',
-        'westminster_lc',
-        'admin123'
-    ]
+    # 3. Password Verification:
+    # STRICT MATCH with current DB password only!
+    # No fallback list, no old passwords, no bypass!
+    actual_password = str(found_user['password']).strip()
+    input_password = str(req.password).strip()
 
-    pass_inp = req.password.strip().lower()
-    pass_digits = re.sub(r'\D', '', pass_inp)
-
-    is_valid_pass = (pass_inp in valid_passwords) or (pass_digits and pass_digits in valid_passwords)
-
-    if not is_valid_pass:
+    if input_password != actual_password:
         conn.close()
         raise HTTPException(status_code=400, detail="Parol noto'g'ri!")
 
-    cursor.execute("SELECT login_code FROM system_settings WHERE id = 1")
-    sys_code_row = cursor.fetchone()
     conn.close()
 
     del found_user["password"]
