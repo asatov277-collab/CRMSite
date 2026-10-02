@@ -1,4 +1,7 @@
 import sqlite3
+import os
+from dotenv import load_dotenv
+import security
 import json
 import os
 from datetime import datetime
@@ -9,6 +12,8 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+load_dotenv()
 
 def init_db():
     conn = get_db()
@@ -209,10 +214,14 @@ def seed_initial_data(cursor):
     month_cur = today[:7]
 
     # Single Admin user
+    admin_login = os.getenv("ADMIN_LOGIN", "Westminster_lc")
+    admin_pwd = os.getenv("ADMIN_PASSWORD", "977999796")
+    hashed_pwd = security.hash_password(admin_pwd)
+
     cursor.execute("""
     INSERT INTO users (id, role, name, phone, password, bio, subject, certificates, salary)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, ("admin_westminster", "admin", "WESTMINSTER_LC", "Westminster_lc", "977999796", "WESTMINSTER CRM Bosh Administratori", "Menejment", "CEO & Administrator", 20000000))
+    """, ("admin_westminster", "admin", "WESTMINSTER_LC", admin_login, hashed_pwd, "WESTMINSTER CRM Bosh Administratori", "Menejment", "CEO & Administrator", 20000000))
 
     # Groups
     cursor.execute("""

@@ -19,6 +19,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from dotenv import load_dotenv
+import security
 
 import database
 from database import get_db, init_db
@@ -33,6 +35,7 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(BACKUPS_DIR, exist_ok=True)
 
 # Initialize database on startup
+load_dotenv()
 init_db()
 
 app = FastAPI(title="WESTMINSTER CRM Backend API", version="1.0.0")
@@ -58,7 +61,7 @@ if os.path.exists(assets_dir):
 OTP_STORE = {}
 
 # ===================== TELEGRAM BOT CONFIG =====================
-TELEGRAM_BOT_TOKEN = "8318395303:AAGBPdtIB3_V-1yB5pBdPCd6ipqsvQZRDYw"
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8318395303:AAGBPdtIB3_V-1yB5pBdPCd6ipqsvQZRDYw")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
 def tg_send_message(chat_id: int, text: str):
@@ -248,12 +251,20 @@ def login(req: LoginRequest):
         raise HTTPException(status_code=400, detail="Telefon raqam yoki login topilmadi!")
 
     # 3. Password Verification:
-    # STRICT MATCH with current DB password only!
-    # No fallback list, no old passwords, no bypass!
     actual_password = str(found_user['password']).strip()
     input_password = str(req.password).strip()
 
-    if input_password != actual_password:
+    if not security.verify_password(input_password, actual_password):
+        conn.close()
+        raise HTTPException(status_code=400, detail="Parol noto'g'ri!")
+        
+    # On-the-fly migration: if password is not hashed yet, hash it now and save
+    if len(actual_password) != 64:
+        new_hashed = security.hash_password(input_password)
+        cursor.execute("UPDATE users SET password = ? WHERE id = ?", (new_hashed, found_user["id"]))
+        conn.commit()
+
+    if False:
         conn.close()
         raise HTTPException(status_code=400, detail="Parol noto'g'ri!")
 
@@ -352,7 +363,7 @@ def verify_reset_password(req: VerifyResetPasswordRequest):
     for u in all_users:
         db_digits = tg_normalize_phone(u["phone"])
         if db_digits == phone_digits:
-            cursor.execute("UPDATE users SET password = ? WHERE id = ?", (req.new_password, u["id"]))
+            cursor.execute("UPDATE users SET password = ? WHERE id = ?", (security.hash_password(req.new_password), u["id"]))
             updated = True
             break
     conn.commit()
@@ -381,11 +392,11 @@ def change_password(req: ChangePasswordRequest):
         raise HTTPException(status_code=404, detail="Foydalanuvchi topilmadi!")
 
     u_dict = dict(user)
-    if req.current_password and u_dict["password"] != req.current_password:
+    if req.current_password and not security.verify_password(req.current_password, u_dict["password"]):
         conn.close()
         raise HTTPException(status_code=400, detail="Joriy parol noto'g'ri kiritildi!")
 
-    cursor.execute("UPDATE users SET password = ? WHERE id = ?", (req.new_password, req.user_id))
+    cursor.execute("UPDATE users SET password = ? WHERE id = ?", (security.hash_password(req.new_password), req.user_id))
     conn.commit()
     conn.close()
 
@@ -606,7 +617,7 @@ def create_user(req: UserCreateRequest):
         cursor.execute("""
             INSERT INTO users (id, role, name, phone, password, bio, subject, certificates, salary, salary_percent, archived, branch_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-        """, (uid, req.role, req.name, req.phone, req.password, req.bio, req.subject, req.certificates, req.salary, req.salary_percent or 50.0, req.branch_id or "b_main"))
+        """, (uid, req.role, req.name, req.phone, security.hash_password(req.password), req.bio, req.subject, req.certificates, req.salary, req.salary_percent or 50.0, req.branch_id or "b_main"))
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
@@ -655,7 +666,7 @@ def admin_edit_user(user_id: str, req: UserAdminEditRequest):
             UPDATE users
             SET name = ?, phone = ?, password = ?, subject = ?, salary_percent = ?, branch_id = ?
             WHERE id = ?
-        """, (req.name, req.phone, req.password.strip(), req.subject, req.salary_percent or 50.0, req.branch_id or "b_main", user_id))
+        """, (req.name, req.phone, security.hash_password(req.password.strip()), req.subject, req.salary_percent or 50.0, req.branch_id or "b_main", user_id))
     else:
         cursor.execute("""
             UPDATE users
@@ -711,7 +722,7 @@ def create_manager(req: ManagerCreateRequest):
         cursor.execute("""
             INSERT INTO users (id, role, name, phone, password, bio, subject, certificates, salary, salary_percent, archived, branch_id)
             VALUES (?, 'manager', ?, ?, ?, '', 'Filial Menejeri', '', 0, 0, 0, ?)
-        """, (uid, req.name, req.phone, req.password, req.branch_id))
+        """, (uid, req.name, req.phone, security.hash_password(req.password), req.branch_id))
 
         # Update branch manager_id and manager_name
         cursor.execute("""
