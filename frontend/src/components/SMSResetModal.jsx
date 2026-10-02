@@ -69,7 +69,16 @@ export default function SMSResetModal({ isOpen, onClose }) {
           <button className="close-btn" onClick={onClose}><X size={20} /></button>
         </div>
 
-        {error && <div className="badge badge-danger" style={{ marginBottom: '14px', width: '100%', padding: '10px' }}>{error}</div>}
+        {error && (
+          <div className="badge badge-danger" style={{ marginBottom: '14px', width: '100%', padding: '10px' }}>
+            <div style={{ textTransform: 'uppercase' }}>{error}</div>
+            {error.includes('Telegram') && (
+              <div style={{ marginTop: '10px', fontSize: '0.9rem', fontWeight: '500' }}>
+                👉 Bot manzili: <a href="https://t.me/Westminster_lc_bot" target="_blank" rel="noopener noreferrer" style={{ color: '#60A5FA', textDecoration: 'underline' }}>@Westminster_lc_bot</a>
+              </div>
+            )}
+          </div>
+        )}
         {message && <div className="badge badge-success" style={{ marginBottom: '14px', width: '100%', padding: '10px' }}>{message}</div>}
 
         {step === 1 ? (
